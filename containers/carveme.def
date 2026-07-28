@@ -1,0 +1,45 @@
+Bootstrap: docker
+From: condaforge/miniforge3:latest
+
+%labels
+    ContainerMaintainer "Hannah Holland-Moritz"
+    Description "Container environment for running CarveMe with DIAMOND and SCIP"
+    CarveMeVersion 1.6.0
+    CarveMeAuthors "Daniel Machado and CarveMe contributors"
+    CarveMeProject "https://github.com/cdanielmachado/carveme"
+
+%post
+    set -eux
+
+    /opt/conda/bin/conda create --yes \
+        --prefix /opt/carveme \
+        --channel conda-forge \
+        --channel bioconda \
+        --strict-channel-priority \
+        python=3.14 \
+	carveme=1.6.6 \
+        diamond \
+        pyscipopt \
+        python-libsbml
+
+    conda clean --all --yes
+
+%environment
+    export PATH="/opt/carveme/bin:$PATH"
+    export PYTHONNOUSERSITE=1
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+
+%test
+    command -v carve
+    command -v diamond
+
+    python -c "import carveme"
+    python -c "import pyscipopt"
+    python -c "import libsbml"
+
+    diamond version
+    carve --help >/dev/null
+
+%runscript
+    exec "$@"

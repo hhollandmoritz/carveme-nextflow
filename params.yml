@@ -1,0 +1,8 @@
+input: "genomes/*.faa"
+outdir: "results"
+solver: "scip"
+
+media_databases:
+  NO_GAPFILL: null
+  M9: null
+  SDMM: "assets/SDMM_media.tsv"

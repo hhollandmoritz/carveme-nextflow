@@ -1,0 +1,5 @@
+input: "test-data/*.faa"
+solver: "scip"
+
+media_databases:
+  SDMM: "assets/SDMM_media.tsv"

@@ -1,0 +1,46 @@
+medium	description	compound	name
+SDMM	Sourdough minimal medium	EX_h_m	H+
+SDMM	Sourdough minimal medium	EX_k_m	Potassium
+SDMM	Sourdough minimal medium	EX_mg2_m	Magnesium
+SDMM	Sourdough minimal medium	EX_mn2_m	Manganese
+SDMM	Sourdough minimal medium	EX_na1_m	Sodium 
+SDMM	Sourdough minimal medium	EX_ni2_m	Ni2+
+SDMM	Sourdough minimal medium	EX_pi_m	Phosphate 
+SDMM	Sourdough minimal medium	EX_so4_m	Sulfate
+SDMM	Sourdough minimal medium	EX_ca2_m	Calcium
+SDMM	Sourdough minimal medium	EX_cl_m	Chloride
+SDMM	Sourdough minimal medium	EX_zn2_m	Zinc
+SDMM	Sourdough minimal medium	EX_cu2_m	Copper
+SDMM	Sourdough minimal medium	EX_fe2_m	Fe2+
+SDMM	Sourdough minimal medium	EX_fe3_m	Fe3+
+SDMM	Sourdough minimal medium	EX_co2_m	CO2
+SDMM	Sourdough minimal medium	EX_o2_m	O2 
+SDMM	Sourdough minimal medium	EX_nh4_m	Ammonia 
+SDMM	Sourdough minimal medium	EX_h2o_m	H2O
+SDMM	Sourdough minimal medium	EX_glc__D_m	D-Glucose
+SDMM	Sourdough minimal medium	EX_malt_m	Maltose
+SDMM	Sourdough minimal medium	EX_malttr_m	Maltotriose 
+SDMM	Sourdough minimal medium	EX_man_m	D-Mannose
+SDMM	Sourdough minimal medium	EX_isomal_m	Isomaltose
+SDMM	Sourdough minimal medium	EX_maltttr_m	Maltotetraose 
+SDMM	Sourdough minimal medium	EX_maltpt_m	Maltopentaose 
+SDMM	Sourdough minimal medium	EX_fru_m	D-Fructose
+SDMM	Sourdough minimal medium	EX_amylopect900_m	Amylopectin (n=900 repeat units, alpha-1,4-glc)
+SDMM	Sourdough minimal medium	EX_amylose300_m	Amylose (n=300 repeat units, alpha-1,4-glc)
+SDMM	Sourdough minimal medium	EX_amylose_m	Amylose
+SDMM	Sourdough minimal medium	EX_cell500_m	Cellulose (n=500 repeating units, beta-1,4 glc)
+SDMM	Sourdough minimal medium	EX_cell6_m	Cellulose (n=6 repeating units) 
+SDMM	Sourdough minimal medium	EX_cell4_m	Cellulose (n=4 repeating units) 
+SDMM	Sourdough minimal medium	EX_starch_m	Starch 
+SDMM	Sourdough minimal medium	EX_strch2_m	Starch, structure 2 (1,6-{2[1,4-Glc], [1,4-Glc]}) 
+SDMM	Sourdough minimal medium	EX_strch1_m	Starch, structure 1 (1,6-{7[1,4-Glc], 4[1,4-Glc]})
+SDMM	Sourdough minimal medium	EX_starch1200_m	Starch n=1200 repeat units (300 repeat units amylose, 900 repeat units amylopectin, corresponds to potato starch)
+SDMM	Sourdough minimal medium	EX_bglc_m	beta glucans
+SDMM	Sourdough minimal medium	EX_hdcea_m	Hexadecenoate (n-C16:1)
+SDMM	Sourdough minimal medium	EX_ocdcya_m	Octadecynoate (n-C18:2)
+SDMM	Sourdough minimal medium	EX_ocdcea_m	Octadecenoate (n-C18:1)
+SDMM	Sourdough minimal medium	EX_lnlncg_m	Gamma-linolenic acid
+SDMM	Sourdough minimal medium	EX_lnlnca_m	Alpha-Linolenic acid
+SDMM	Sourdough minimal medium	EX_gln__L_m	L-Glutamine
+SDMM	Sourdough minimal medium	EX_pro__L_m	L-Proline
+SDMM	Sourdough minimal medium	EX_leu__L_m	L-Leucine
