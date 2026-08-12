@@ -27,7 +27,7 @@ model_count="$(
     find -L "$models_dir" \
         -maxdepth 1 \
         -type f \
-        -name '*.xml' \
+        -name '*.sbml' \
         -print |
         wc -l
 )"
@@ -47,7 +47,7 @@ model="$(
     find -L "$models_dir" \
         -maxdepth 1 \
         -type f \
-        -name '*.xml' \
+        -name '*.sbml' \
         -print |
         head -n 1
 )"

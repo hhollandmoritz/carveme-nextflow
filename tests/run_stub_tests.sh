@@ -53,7 +53,7 @@ run_stub_test() {
         --outdir "$output_dir" \
         -stub-run
 
-    model_count="$(count_outputs "$output_dir/models" '*.xml')"
+    model_count="$(count_outputs "$output_dir/models" '*.sbml')"
     log_count="$(count_outputs "$output_dir/logs" '*.log')"
 
     if [[ "$model_count" -ne "$expected_models" ]]; then

@@ -1,6 +1,9 @@
-.PHONY: test test-stub test-integration
+.PHONY: test test-unit test-stub test-integration
 
-test: test-stub
+test: test-unit test-stub
+
+test-unit:
+	./tests/test_model_extension_consistency.sh
 
 test-stub:
 	./tests/run_stub_tests.sh
