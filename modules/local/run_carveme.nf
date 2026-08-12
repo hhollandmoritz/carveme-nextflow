@@ -19,7 +19,7 @@ process RUN_CARVEME_DEFAULT {
           emit: logs
 
     script:
-    def model = "${sample_id}.${medium}.xml"
+    def model = "${sample_id}.${medium}.sbml"
     def log   = "${sample_id}.${medium}.log"
 
     """
