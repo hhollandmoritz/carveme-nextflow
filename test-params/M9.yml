@@ -2,4 +2,4 @@ input: "test-data/*.faa"
 solver: "scip"
 
 media_databases:
-  M9: null
+  M9[-O2]: null

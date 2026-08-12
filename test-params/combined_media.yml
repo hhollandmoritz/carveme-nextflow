@@ -3,5 +3,5 @@ solver: "scip"
 
 media_databases:
   NO_GAPFILL: null
-  M9: null
-  SDMM: "assets/SDMM_media.tsv"
+  M9[-O2]: null
+  SDMM: "assets/SDMM_media_new_cobalt_molybdate.tsv"
