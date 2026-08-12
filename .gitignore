@@ -1,4 +1,7 @@
 test-results/
 work/
+results/
+genomes/
+containers/*.log
 .nextflow/
 .nextflow.log*
