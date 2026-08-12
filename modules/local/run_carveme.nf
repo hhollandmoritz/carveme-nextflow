@@ -10,12 +10,12 @@ process RUN_CARVEME_DEFAULT {
     output:
     tuple val(sample_id),
           val(medium),
-          path("${sample_id}.${medium}.sbml"),
+          path("${sample_id}.${medium}.sbml", glob: false),
           emit: models
 
     tuple val(sample_id),
           val(medium),
-          path("${sample_id}.${medium}.log"),
+          path("${sample_id}.${medium}.log", glob: false),
           emit: logs
 
     script:
@@ -54,12 +54,12 @@ process RUN_CARVEME_CUSTOM {
     output:
     tuple val(sample_id),
           val(medium),
-          path("${sample_id}.${medium}.sbml"),
+          path("${sample_id}.${medium}.sbml", glob: false),
           emit: models
 
     tuple val(sample_id),
           val(medium),
-          path("${sample_id}.${medium}.log"),
+          path("${sample_id}.${medium}.log", glob: false),
           emit: logs
 
     script:
@@ -97,12 +97,12 @@ process RUN_CARVEME_NO_GAPFILL {
     output:
     tuple val(sample_id),
           val('NO_GAPFILL'),
-          path("${sample_id}.no-gapfill.sbml"),
+          path("${sample_id}.no-gapfill.sbml", glob: false),
           emit: models
 
     tuple val(sample_id),
           val('NO_GAPFILL'),
-          path("${sample_id}.no-gapfill.log"),
+          path("${sample_id}.no-gapfill.log", glob: false),
           emit: logs
 
     script:
