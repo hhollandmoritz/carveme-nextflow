@@ -1,5 +1,11 @@
 input: "test-data/*.faa"
+outdir: "test-results/automated/combined"
 solver: "scip"
+
+carveme_args: ""
+
+universe: null
+universe_file: null
 
 media_databases:
   NO_GAPFILL: null

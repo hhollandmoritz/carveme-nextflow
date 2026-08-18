@@ -144,4 +144,11 @@ if [[ "$failures" -gt 0 ]]; then
     exit 1
 fi
 
+run_stub_test \
+    "carveme-parameters" \
+    "test-params/carveme-parameters.yml" \
+    3 \
+    3 ||
+    failures=$((failures + 1))
+
 printf '\nAll stub tests passed.\n'

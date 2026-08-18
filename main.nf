@@ -9,6 +9,20 @@ include {
 workflow {
 
     log.info "Project directory: ${projectDir}"
+    /* 
+    * Checks on universe specifications. 
+    * 1) only one of universe options specified at a time
+    */
+    if (params.universe && params.universe_file) {
+        error "Specify either --universe or --universe_file, not both."
+    }
+    /*
+     * Check if the universe file exists if specified.
+     */ 
+    if (params.universe_file) {
+        file(params.universe_file, checkIfExists: true)
+    }
+
     /*
      * Emit:
      * tuple(sample_id, faa)
@@ -19,6 +33,10 @@ workflow {
             tuple(faa.baseName, faa)
         }
 
+    /*
+     * Optional/modifiable arguments 
+     * (media, extra carveme arguments)
+     */
     media_config = params.media_databases ?: [:]
 
     /*
