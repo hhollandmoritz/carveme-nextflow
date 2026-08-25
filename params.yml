@@ -2,7 +2,7 @@ input: "genomes/*.faa"
 outdir: "results"
 solver: "scip"
 
-carvme_args: null # use for other carvme arguments, ex: "--default-score -2"
+carveme_args: "" # use for other carvme arguments, ex: "--default-score -2"
 
 # Universe settings, only use one
 universe: "gramneg"
@@ -11,5 +11,5 @@ universe_file: null # change to path to custom universe file
 # Media options, each media option that is not null will be run
 media_databases:
   NO_GAPFILL: null
- "M9[-O2]": null
-  SDMM: "assets/SDMM_media_new_cobalt_molybdate.tsv"
+  "M9[-O2]": null
+  SDMM: "assets/SDMM_media.tsv"
