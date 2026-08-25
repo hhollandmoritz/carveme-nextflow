@@ -69,7 +69,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--prefix",
         help=(
-            "Filename prefix for outputs. Defaults to a filesystem-safe form of --name."
+            "Filename prefix for outputs to facilitate automated parsing of nextflow inputs. "
+            "Defaults to --name with special characters and spaces replaced by '_'."
         ),
     )
     parser.add_argument(
@@ -79,7 +80,8 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="KEY=VALUE",
         help=(
             "Extra metadata copied into every output row. Repeat for sample, medium, "
-            "treatment, etc. Example: --label sample_id=S1 --label medium=M9"
+            "treatment, etc. Example: --label sample_id=S1 --label medium=M9 "
+            "This is not recommended for manual usage, but facilitates nextflow automation."
         ),
     )
     parser.add_argument(
@@ -103,7 +105,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--solver",
-        help="Optional COBRApy solver name, such as glpk, cplex, or gurobi.",
+        help=(
+            "Optional COBRApy solver name, such as glpk, cplex, or gurobi."
+            "COBRApy default is to search and automatically choose."
+        ),
     )
     parser.add_argument(
         "--medium",
@@ -118,7 +123,8 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("replace", "update"),
         default="replace",
         help=(
-            "replace closes uptake for unlisted exchanges; update modifies only listed "
+            "replace - disables the import direction while retaining the export direction "
+            "for unlisted exchanges; update modifies only listed "
             "exchanges. Default: replace."
         ),
     )
@@ -131,7 +137,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--flux-threshold",
         type=float,
         default=1e-9,
-        help="Fluxes below this absolute value are written as zero. Default: 1e-9.",
+        help=(
+            "Fluxes (in either direction, uptake or secretion) below this "
+            "threshold are written as zero. "
+            "Default: 1e-9."
+        ),
     )
     parser.add_argument(
         "--fail-on-nonoptimal",
@@ -145,6 +155,21 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def strip_model_suffix(path: Path) -> str:
+    """Remove a SBML/XML suffix from a model filename.
+
+    If the filename does not end in a recognized model suffix,
+    the 'basename' (:attr:`pathlib.Path.stem`) is used instead.
+
+    Parameters
+    ----------
+    path
+        Path to the model file.
+
+    Returns
+    -------
+    str
+        The model filename without its suffix.
+    """
     name = path.name
     for suffix in MODEL_SUFFIXES:
         if name.lower().endswith(suffix):
@@ -153,13 +178,54 @@ def strip_model_suffix(path: Path) -> str:
 
 
 def safe_prefix(value: str) -> str:
+    """Remove special characters from a model filename prefix.
+    
+    Special characters are replaced with an underscore.
+
+    Parameters
+    ----------
+    value
+        Original filename prefix.
+
+    Returns
+    -------
+    str
+        Filename prefix without special characters.
+
+    Raises
+    ------
+    ValueError
+        If sanitization removes every usable character from ``value``.
+    """
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._-")
     if not cleaned:
-        raise ValueError("The output prefix becomes empty after sanitization.")
+        raise ValueError("The output prefix is empty after special character removal.")
     return cleaned
 
 
 def parse_labels(values: Iterable[str]) -> dict[str, str]:
+    """Parse metadata labels from command-line ``--label`` arguments.
+
+    Repeated ``KEY=VALUE`` labels are returned as dictionary. These
+    values will later be added to output tables.
+
+    Parameters
+    ----------
+    values
+        Iterable of label strings formatted as ``KEY=VALUE``.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping of label keys to values in input order.
+
+    Raises
+    ------
+    ValueError
+        If an item lacks an equals sign, has an empty key, uses a reserved
+        metadata column (one of ``METADATA_COLUMNS``), or repeats a 
+        previously supplied key.
+    """
     labels: dict[str, str] = {}
     for item in values:
         if "=" not in item:
@@ -177,27 +243,66 @@ def parse_labels(values: Iterable[str]) -> dict[str, str]:
 
 
 def read_medium(path: Path) -> dict[str, float]:
-    frame = pd.read_csv(path, sep=None, engine="python")
+    """Read and validate a COBRApy growth-medium definition file.
+
+    The input file must contain one row per exchange reaction and include
+    the following columns:
+
+    - ``exchange``: the exchange reaction identifier in the model.
+    - ``uptake``: the non-negative maximum uptake rate for that reaction.
+
+    Comma-separated and tab-separated files are both supported.
+
+    Parameters
+    ----------
+    path
+        Path to the medium-definition file.
+
+    Returns
+    -------
+    dict[str, float]
+        A dictionary mapping exchange reaction identifiers to their maximum
+        uptake rates.
+
+    Example
+    --------
+    Given a file containing::
+
+        exchange,uptake
+        EX_glc__D_e,10
+        EX_nh4_e,5
+        EX_o2_e,20
+
+    the function returns::
+
+        {
+            "EX_glc__D_e": 10.0,
+            "EX_nh4_e": 5.0,
+            "EX_o2_e": 20.0,
+        }
+
+    """
+    medium_df = pd.read_csv(path, sep=None, engine="python")
     required = {"exchange", "uptake"}
-    missing = required.difference(frame.columns)
+    missing = required.difference(medium_df.columns)
     if missing:
         raise ValueError(
             f"Medium file {path} is missing columns: {', '.join(sorted(missing))}."
         )
 
-    if frame["exchange"].duplicated().any():
-        duplicates = sorted(frame.loc[frame["exchange"].duplicated(), "exchange"].unique())
+    if medium_df["exchange"].duplicated().any():
+        duplicates = sorted(medium_df.loc[medium_df["exchange"].duplicated(), "exchange"].unique())
         raise ValueError(f"Duplicate exchanges in medium file: {duplicates}")
 
-    uptake = pd.to_numeric(frame["uptake"], errors="raise")
+    uptake = pd.to_numeric(medium_df["uptake"], errors="raise")
     if (uptake < 0).any():
-        bad = frame.loc[uptake < 0, "exchange"].tolist()
+        bad = medium_df.loc[uptake < 0, "exchange"].tolist()
         raise ValueError(
             "COBRApy model.medium values must be non-negative maximum uptake rates; "
             f"negative values found for: {bad}"
         )
 
-    return dict(zip(frame["exchange"].astype(str), uptake.astype(float), strict=True))
+    return dict(zip(medium_df["exchange"].astype(str), uptake.astype(float), strict=True))
 
 
 def apply_medium(
@@ -206,6 +311,48 @@ def apply_medium(
     mode: str,
     ignore_missing: bool,
 ) -> list[str]:
+    """Modify COBRApy model medium uptake limits.
+
+    Used to manipulate the environment the cell experiences in silico. 
+    If the supplied medium includes reaction IDs that are in the model, 
+    those modified reaction ids are applied in the model.
+
+    - In ``replace`` mode, the filtered mapping replaces ``model.medium``, 
+    which prevents uptake for exchanges not listed in the supplied medium. 
+    (for example, if ``EX_glc__D_e`` is not listed in the supplied medium, 
+    glucose uptake will be prevented).
+    - In ``update`` mode, the supplied entries overwrite matching values in the
+    existing model medium while leaving all other entries unchanged.
+
+    Parameters
+    ----------
+    model
+        COBRApy model whose medium will be modified.
+    medium
+        Mapping from exchange-reaction IDs to maximum uptake rates.
+    mode
+        Medium application mode. Either ``"replace"`` or ``"update"``.
+    ignore_missing
+        If ``True``, ignore medium reactions absent from the model. If
+        ``False``, missing reactions cause an exception.
+
+    Returns
+    -------
+    list[str]
+        Sorted identifiers from ``medium`` that were absent from the model.
+        The list is empty when all medium reactions are present.
+
+    Raises
+    ------
+    KeyError
+        If medium reactions are absent from the model and ``ignore_missing``
+        is ``False``.
+
+    Notes
+    -----
+    This function modifies ``model.medium`` in place; any value
+    other than ``"replace"`` follows the update branch.
+    """
     reaction_ids = {reaction.id for reaction in model.reactions}
     missing = sorted(set(medium).difference(reaction_ids))
     if missing and not ignore_missing:
@@ -224,6 +371,27 @@ def apply_medium(
 
 
 def objective_details(model) -> tuple[dict[str, float], str]:
+    """Extract the model's linear objective coefficients and expression.
+
+    Parameters
+    ----------
+    model
+        COBRApy model containing the objective to inspect.
+
+    Returns
+    -------
+    tuple[dict[str, float], str]
+        A two-item tuple containing:
+
+        1. A dictionary of objective reaction identifiers and their numeric
+           coefficients.
+        2. The solver objective expression (string).
+
+    Notes
+    -----
+    The coefficient mapping contains only linear reaction coefficients. It is
+    empty when no such coefficients can be extracted.
+    """
     coefficients = linear_reaction_coefficients(model)
     coefficient_map = {
         reaction.id: float(coefficient)
@@ -236,12 +404,50 @@ def objective_value_from_fluxes(
     fluxes: pd.Series,
     coefficients: dict[str, float],
 ) -> float | None:
+    """Calculate a linear objective value from reaction fluxes.
+
+    The objective is calculated as the sum of each objective reaction's flux
+    multiplied by its corresponding coefficient.
+
+    Parameters
+    ----------
+    fluxes
+        A pandas series indexed by reaction identifier and containing reaction fluxes.
+    coefficients
+        A dictionary mapping objective reaction identifiers to linear coefficients.
+
+    Returns
+    -------
+    float or None
+        Calculated objective value, or ``None`` when ``coefficients`` is empty.
+
+    Raises
+    ------
+    KeyError
+        If an objective reaction identifier is absent from ``fluxes``.
+    """
     if not coefficients:
         return None
     return float(sum(fluxes[reaction_id] * coef for reaction_id, coef in coefficients.items()))
 
 
 def zero_small_values(series: pd.Series, threshold: float) -> pd.Series:
+    """Replace flux values with zero when they are smaller than the given threshold.
+
+    Parameters
+    ----------
+    series
+        Numeric values to filter.
+    threshold
+        Non-negative absolute-value cutoff. When ``abs(value) < threshold``, 
+        the value is replaced with ``0.0``.
+
+    Returns
+    -------
+    pandas.Series
+        Floating-point copy of ``series`` with small values replaced by zero.
+
+    """
     result = series.astype(float).copy()
     result.loc[result.abs() < threshold] = 0.0
     return result
@@ -253,6 +459,33 @@ def add_identity_columns(
     result_id: str,
     labels: dict[str, str],
 ) -> pd.DataFrame:
+    """Prepend model and run identifiers to an output table.
+
+    The function copies the input frame, inserts ``model_name`` and
+    ``result_id`` as its first two columns, and then inserts user labels in
+    dictionary iteration order. Each inserted value is repeated for every row.
+
+    Parameters
+    ----------
+    frame
+        Output table to annotate.
+    model_name
+        Logical model name to store in every row.
+    result_id
+        Identifier for this optimization result, normally the output prefix.
+    labels
+        Additional metadata columns and their constant values.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Annotated copy of ``frame``.
+
+    Raises
+    ------
+    ValueError
+        If an inserted column name already exists in ``frame``.
+    """
     result = frame.copy()
     result.insert(0, "model_name", model_name)
     result.insert(1, "result_id", result_id)
@@ -262,6 +495,27 @@ def add_identity_columns(
 
 
 def write_tsv(frame: pd.DataFrame, path: Path) -> None:
+    """Write a DataFrame to a tab-separated file using a temporary file.
+
+    Table is first written to a temporary file, then saved as final output.
+
+    Parameters
+    ----------
+    frame
+        Table to write.
+    path
+        Destination TSV path.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    OSError
+        If the output directory or file cannot be created, written, or
+        replaced.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     frame.to_csv(temporary, sep="\t", index=False)
@@ -269,6 +523,32 @@ def write_tsv(frame: pd.DataFrame, path: Path) -> None:
 
 
 def build_flux_table(model, solution, threshold: float) -> pd.DataFrame:
+    """Build a reaction-level flux table from an optimization solution.
+
+    One row is produced for every reaction in model. Each record
+    includes the reaction identifier and name, signed and absolute fluxes,
+    reaction bounds, stoichiometric equation, and gene-reaction rule. Fluxes
+    whose absolute magnitude is below ``threshold`` are reported as zero.
+
+    Parameters
+    ----------
+    model
+        COBRApy model whose reactions define the output rows.
+    solution
+        COBRApy solution containing a flux value for each model reaction.
+    threshold
+        Non-negative absolute-value cutoff below which fluxes are set to zero.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Reaction-level flux table with one row per model reaction.
+
+    Raises
+    ------
+    KeyError
+        If ``solution.fluxes`` does not contain a model reaction identifier.
+    """
     records = []
     for reaction in model.reactions:
         flux = float(solution.fluxes[reaction.id])
@@ -290,6 +570,29 @@ def build_flux_table(model, solution, threshold: float) -> pd.DataFrame:
 
 
 def build_summary_table(model, solution, threshold: float) -> pd.DataFrame:
+    """Build a boundary-flux table from ``model.summary()``.
+
+    The COBRApy model summary is converted to a DataFrame, small fluxes are
+    set to zero, and each row is annotated with its absolute flux, direction,
+    and boundary-reaction type. Positive summary fluxes are labeled
+    ``"uptake"``, negative fluxes are labeled ``"secretion"``, and zero
+    fluxes are labeled ``"inactive"``.
+
+    Parameters
+    ----------
+    model
+        COBRApy model used to generate and classify the boundary summary.
+    solution
+        COBRApy solution to pass to ``model.summary()``.
+    threshold
+        Non-negative absolute-value cutoff below which fluxes are set to zero.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Boundary-flux table containing reaction, metabolite, boundary type,
+        stoichiometric factor, signed flux, absolute flux, and direction.
+    """
     summary = model.summary(solution=solution).to_frame().reset_index(drop=True)
     summary["flux"] = zero_small_values(summary["flux"], threshold)
     summary["absolute_flux"] = summary["flux"].abs()
@@ -354,17 +657,44 @@ def empty_summary_table() -> pd.DataFrame:
 
 
 def main() -> int:
+     """Run the command-line model-optimization workflow.
+
+    The workflow performs the following operations:
+
+    1. Parse and validate command-line arguments.
+    2. Load the SBML model and apply optional solver, objective, and medium
+       settings.
+    3. Maximize the model objective with FBA.
+    4. Report either that FBA solution or a pFBA solution constrained to the
+       requested fraction of the optimum.
+    5. Write model metadata, reaction fluxes, and boundary-summary TSV files.
+
+    Returns
+    -------
+    int
+        Process exit code. Returns ``0`` after normal completion. Returns ``2``
+        when optimization is non-optimal and ``--fail-on-nonoptimal`` was
+        requested.
+
+    Notes
+    -----
+    Invalid command-line input is reported through ``argparse`` and raises
+    ``SystemExit`` before this function returns. The function also creates the
+    output directory, writes three TSV files, and prints their paths and the
+    optimization status to standard output.
+    """
     parser = build_parser()
     args = parser.parse_args()
 
+    # Check command line inputs
     if not 0 < args.fraction_of_optimum <= 1:
-        parser.error("--fraction-of-optimum must be greater than 0 and at most 1.")
+        parser.error("--fraction-of-optimum must be between 0 and 1 (0, 1].")
     if args.flux_threshold < 0:
         parser.error("--flux-threshold cannot be negative.")
     if not args.model.is_file():
         parser.error(f"Model file does not exist: {args.model}")
     if args.medium is not None and not args.medium.is_file():
-        parser.error(f"Medium file does not exist: {args.medium}")
+        parser.error(f"The medium file you specified does not exist: {args.medium}")
 
     try:
         labels = parse_labels(args.label)
@@ -412,8 +742,9 @@ def main() -> int:
 
     maximum_biomass: float | None = None
     solution_biomass: float | None = None
-    flux_table = empty_flux_table()
-    summary_table = empty_summary_table()
+    flux_table: pd.DataFrame | None = None
+    summary_table: pd.DataFrame | None = None
+
 
     if status == "optimal":
         maximum_biomass = float(growth_solution.objective_value)
@@ -431,7 +762,14 @@ def main() -> int:
         )
         flux_table = build_flux_table(model, flux_solution, args.flux_threshold)
         summary_table = build_summary_table(model, flux_solution, args.flux_threshold)
-
+    else:
+        print(
+            f"ERROR: Optimization failed for model {model_name!r}. "
+            f"Solver status: {status!r}. Flux and summary tables "
+            "will not be written.",
+            file=sys.stderr,
+        )
+        
     metadata = {
         "model_name": model_name,
         "result_id": prefix,
@@ -459,19 +797,32 @@ def main() -> int:
     }
 
     metadata_table = pd.DataFrame([metadata])
-    flux_table = add_identity_columns(flux_table, model_name, prefix, labels)
-    summary_table = add_identity_columns(summary_table, model_name, prefix, labels)
-
     write_tsv(metadata_table, model_path)
-    write_tsv(flux_table, flux_path)
-    write_tsv(summary_table, summary_path)
+
+    if flux_table is not None and summary_table is not None:
+        flux_table = add_identity_columns(
+            flux_table,
+            model_name,
+            prefix,
+            labels,
+        )
+        summary_table = add_identity_columns(
+            summary_table,
+            model_name,
+            prefix,
+            labels,
+        )
+        write_tsv(flux_table, flux_path)
+        write_tsv(summary_table, summary_path)
+        print(f"flux_table={flux_path}")
+        print(f"summary_table={summary_path}")
 
     print(f"status={status}")
     print(f"maximum_biomass={maximum_biomass}")
     print(f"model_table={model_path}")
-    print(f"flux_table={flux_path}")
-    print(f"summary_table={summary_path}")
 
+    # note: keeping fail on non-optimal in, b/c in future
+    # want to replace error above with warning.
     if status != "optimal" and args.fail_on_nonoptimal:
         return 2
     return 0
