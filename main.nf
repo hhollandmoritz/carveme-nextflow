@@ -6,6 +6,8 @@ include {
     RUN_CARVEME_NO_GAPFILL
  } from './modules/local/run_carveme'
 
+include { COBRA_ANALYSIS } from './subworkflows/local/cobra_analysis'
+
 workflow {
 
     log.info "Project directory: ${projectDir}"
@@ -142,5 +144,56 @@ workflow {
 
         models_ch = gapfill_models_ch
         logs_ch   = gapfill_logs_ch
+    }
+    /*
+     * COBRApy analysis
+     */
+    if (params.run_cobra) {
+        cobra_medium_ch = Channel.value(
+            params.cobra_medium
+                ? file(params.cobra_medium, checkIfExists: true)
+                : []
+        )
+
+        bigg_metabolites_ch = Channel.value(
+            params.bigg_metabolites
+                ? file(params.bigg_metabolites, checkIfExists: true)
+                : []
+        )
+
+        cobra_run_options_ch = Channel.value([
+            method                           : params.cobra_method,
+            fraction_of_optimum              : params.cobra_fraction_of_optimum,
+            objective                        : params.cobra_objective,
+            solver                           : params.cobra_solver,
+            medium_mode                      : params.cobra_medium_mode,
+            ignore_missing_medium_reactions  : params.cobra_ignore_missing_medium_reactions,
+            flux_threshold                   : params.cobra_flux_threshold,
+            fail_on_nonoptimal               : params.cobra_fail_on_nonoptimal,
+            extra_args                       : params.cobra_run_args
+        ])
+
+        cobra_summary_options_ch = Channel.value([
+            outputs                  : params.cobra_outputs,
+            row_columns              : params.cobra_row_columns,
+            row_separator            : params.cobra_row_separator,
+            summary_column           : params.cobra_summary_column,
+            summary_boundary_types   : params.cobra_summary_boundary_types,
+            min_abs_flux             : params.cobra_min_abs_flux,
+            top_n                    : params.cobra_top_n,
+            heatmap_transform        : params.cobra_heatmap_transform,
+            figure_format            : params.cobra_figure_format,
+            dpi                      : params.cobra_dpi,
+            include_nonoptimal       : params.cobra_include_nonoptimal,
+            extra_args               : params.cobra_summary_args
+        ])
+
+        COBRA_ANALYSIS(
+            all_models_ch,
+            cobra_medium_ch,
+            bigg_metabolites_ch,
+            cobra_run_options_ch,
+            cobra_summary_options_ch
+        )
     }
 }
