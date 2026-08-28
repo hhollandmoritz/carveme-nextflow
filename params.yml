@@ -13,3 +13,4 @@ media_databases:
   NO_GAPFILL: null
   "M9[-O2]": null
   SDMM: "assets/SDMM_media.tsv"
+  "SDMM_ETOH": "assets/SDMM_media_etoh.tsv"
