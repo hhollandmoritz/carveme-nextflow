@@ -1,7 +1,8 @@
-test-results/
+test-results/*
+test-data/*
 work/
 results/
-genomes/
+genomes/*
 containers/*.log
 .nextflow/
 .nextflow.log*
