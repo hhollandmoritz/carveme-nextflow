@@ -189,7 +189,7 @@ workflow {
         ])
 
         COBRA_ANALYSIS(
-            all_models_ch,
+            models_ch,
             cobra_medium_ch,
             bigg_metabolites_ch,
             cobra_run_options_ch,

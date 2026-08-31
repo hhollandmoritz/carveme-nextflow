@@ -14,3 +14,41 @@ media_databases:
   "M9[-O2]": null
   SDMM: "assets/SDMM_media.tsv"
   "SDMM_ETOH": "assets/SDMM_media_etoh.tsv"
+
+# Cobrapy settings
+run_cobra: true
+bigg_metabolites: assets/bigg_models_metabolites.txt
+
+# The following are optionally defined in the yml file, but have defaults
+# in the nextflow config.script. Only modify here if you want to overwrite 
+# those defaults. 
+
+# cobra_method: "pfba"
+# cobra_fraction_of_optimum: 1.0
+# cobra_objective: null
+# cobra_solver: null
+
+# cobra_medium: null
+# cobra_medium_mode: "replace"
+# cobra_ignore_missing_medium_reactions: false
+
+# cobra_flux_threshold: 1.0e-9
+# cobra_fail_on_nonoptimal: true
+
+# cobra_outputs:
+#   - growth-table
+#   - summary-long
+#   - summary-matrix
+#   - summary-heatmap
+
+# cobra_row_columns:
+#   - sample_id
+#   - medium
+
+# cobra_summary_boundary_types:
+#   - exchange
+
+# cobra_top_n: 50
+# cobra_heatmap_transform: "signed-log1p"
+
+

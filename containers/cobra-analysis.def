@@ -1,0 +1,118 @@
+Bootstrap: docker
+From: continuumio/miniconda3:24.11.1-0
+
+%labels
+    Author Hannah Holland-Moritz
+    Description "COBRApy, Escher, Jupyter, and scientific Python environment"
+    Python-Version "3.12"
+
+%environment
+    export LC_ALL=C
+    export MPLBACKEND=Agg
+    export HOME=/tmp
+    export XDG_CACHE_HOME=/tmp/.cache
+    source /opt/conda/etc/profile.d/conda.sh
+
+%post
+    set -eux
+
+    # Install the compiled scientific packages from conda-forge.
+    # swiglpk provides the open-source GLPK solver used by COBRApy.
+    /opt/conda/bin/conda install -y \
+        --name base \
+        --override-channels \
+        --channel conda-forge \
+        python=3.12 \
+        cobra \
+        python-libsbml \
+        swiglpk \
+        numpy \
+        matplotlib \
+        pandas \
+        scipy \
+        notebook \
+        jupyterlab \
+        ipykernel \
+        pip \
+        "setuptools<82"
+
+    # Escher's documented installation method is pip.
+    #
+    # setuptools is capped below 82 because Escher releases that import
+    # pkg_resources require it, and pkg_resources was removed in
+    # setuptools 82.
+    /opt/conda/bin/python -m pip install \
+        --no-cache-dir \
+        "setuptools<82" \
+        escher
+
+    # Record the exact packages installed in this build.
+    /opt/conda/bin/conda list --explicit \
+        > /opt/conda-explicit-spec.txt
+
+    /opt/conda/bin/python -m pip freeze \
+        > /opt/pip-freeze.txt
+
+    # Reduce final container size.
+    /opt/conda/bin/conda clean --all --yes
+    rm -rf /root/.cache/pip
+
+    # Ensure a writable HOME for tools that cache config/data at runtime
+    # (cobrapy, jupyter, matplotlib all write to $HOME/.cache or $HOME/.jupyter)
+    export HOME=/tmp
+    mkdir -p /tmp/.cache
+    mkdir -p /data
+
+%test
+    export HOME=/tmp
+    source /opt/conda/etc/profile.d/conda.sh
+    python -c "import cobra, escher, numpy, scipy, pandas, matplotlib; print('All packages imported successfully')"
+    jupyter --version
+
+%runscript
+    exec /opt/conda/bin/jupyter notebook \
+        --no-browser \
+        --ip=127.0.0.1 \
+        --port=8888 \
+        "$@"
+
+%help
+    This container provides:
+
+      - COBRApy
+      - python-libSBML
+      - Escher
+      - Jupyter Notebook
+      - JupyterLab
+      - NumPy
+      - Matplotlib
+      - pandas
+      - SciPy
+      - GLPK solver support
+
+    Start Jupyter Notebook:
+
+      apptainer run \
+          --bind "$PWD:/workspace" \
+          cobra-escher-jupyter.sif \
+          --notebook-dir=/workspace
+
+    Start JupyterLab:
+
+      apptainer exec \
+          --bind "$PWD:/workspace" \
+          cobra-escher-jupyter.sif \
+          jupyter lab \
+          --no-browser \
+          --ip=127.0.0.1 \
+          --port=8888 \
+          --notebook-dir=/workspace
+
+    Open a Python shell:
+
+      apptainer exec cobra-escher-jupyter.sif python
+
+    Inspect installed versions:
+
+      apptainer exec cobra-escher-jupyter.sif \
+          cat /opt/pip-freeze.txt
