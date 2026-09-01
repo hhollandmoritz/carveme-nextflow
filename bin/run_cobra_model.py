@@ -657,7 +657,7 @@ def empty_summary_table() -> pd.DataFrame:
 
 
 def main() -> int:
-     """Run the command-line model-optimization workflow.
+    """Run the command-line model-optimization workflow.
 
     The workflow performs the following operations:
 
@@ -719,7 +719,7 @@ def main() -> int:
     if args.objective:
         try:
             model.objective = model.reactions.get_by_id(args.objective)
-        except KeyError as error:
+        except KeyError:
             parser.error(f"Objective reaction not found: {args.objective}")
         model.objective_direction = "max"
 

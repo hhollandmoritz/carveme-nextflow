@@ -134,6 +134,15 @@ def build_parser() -> argparse.ArgumentParser:
             "optimal models are included in flux comparisons."
         ),
     )
+    parser.add_argument(
+        "--bigg-metabolites",
+        type=Path,
+        default=None,
+        help=(
+            "Optional BiGG metabolite metadata table used to annotate "
+            "metabolites in the combined summary outputs."
+        ),
+    )
     return parser
 
 
@@ -169,6 +178,77 @@ def read_many(paths: list[Path], kind: str) -> pd.DataFrame:
     frames = [pd.read_csv(path, sep="\t") for path in paths]
     return pd.concat(frames, ignore_index=True, sort=False)
 
+def read_bigg_metabolite_names(path: Path) -> pd.DataFrame:
+    """Read BiGG metabolite identifiers and names.
+
+    The standard BiGG metabolite export contains columns including
+    ``bigg_id``, ``universal_bigg_id``, and ``name``. Model-specific BiGG
+    identifiers are preferred because COBRApy summary outputs normally
+    include compartment suffixes such as ``_c`` or ``_e``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A two-column table containing ``metabolite`` and ``metabolite_name``.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"BiGG metabolite metadata file does not exist: {path}"
+        )
+
+    bigg = pd.read_csv(
+        path,
+        sep="\t",
+        dtype=str,
+        keep_default_na=False,
+    )
+
+    required = {"bigg_id", "name"}
+    missing = required.difference(bigg.columns)
+    if missing:
+        raise ValueError(
+            "BiGG metabolite metadata file is missing required columns: "
+            + ", ".join(sorted(missing))
+        )
+
+    names = (
+        bigg.loc[:, ["bigg_id", "name"]]
+        .rename(
+            columns={
+                "bigg_id": "metabolite",
+                "name": "metabolite_name",
+            }
+        )
+        .drop_duplicates(subset="metabolite")
+    )
+
+    return names
+
+def annotate_metabolites(
+    summary: pd.DataFrame,
+    metabolite_names: pd.DataFrame,
+) -> pd.DataFrame:
+    """Add BiGG metabolite names to a COBRApy summary table."""
+    if "metabolite" not in summary.columns:
+        raise KeyError(
+            "Summary inputs do not contain a metabolite column."
+        )
+
+    annotated = summary.merge(
+        metabolite_names,
+        on="metabolite",
+        how="left",
+        validate="many_to_one",
+    )
+
+    annotated["metabolite_name"] = annotated["metabolite_name"].fillna("")
+
+    columns = annotated.columns.tolist()
+    columns.remove("metabolite_name")
+    metabolite_position = columns.index("metabolite") + 1
+    columns.insert(metabolite_position, "metabolite_name")
+
+    return annotated.loc[:, columns]
 
 def make_row_id(frame: pd.DataFrame, columns: list[str], separator: str) -> pd.Series:
     missing = [column for column in columns if column not in frame.columns]
@@ -288,10 +368,20 @@ def main() -> int:
     outputs = requested_outputs(args.outputs)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        files = discover_files(args.results)
-    except FileNotFoundError as error:
-        parser.error(str(error))
+    bigg_metabolite_names: pd.DataFrame | None = None
+
+    if args.bigg_metabolites is not None:
+        try:
+            bigg_metabolite_names = read_bigg_metabolite_names(
+                args.bigg_metabolites
+            )
+        except (FileNotFoundError, ValueError, pd.errors.ParserError) as error:
+            parser.error(str(error))
+
+        try:
+            files = discover_files(args.results)
+        except FileNotFoundError as error:
+            parser.error(str(error))
 
     metadata: pd.DataFrame | None = None
     summary: pd.DataFrame | None = None
@@ -342,6 +432,15 @@ def main() -> int:
         summary = summary.loc[
             summary["boundary_type"].isin(args.summary_boundary_types)
         ].copy()
+
+        if bigg_metabolite_names is not None:
+            try:
+                summary = annotate_metabolites(
+                    summary,
+                    bigg_metabolite_names,
+                )
+            except (KeyError, pd.errors.MergeError) as error:
+                parser.error(str(error))
 
         if "summary-long" in outputs:
             summary.to_csv(
