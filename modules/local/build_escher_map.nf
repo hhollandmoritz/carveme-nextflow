@@ -6,14 +6,15 @@ process BUILD_ESCHER_MAP {
     tuple val(sample_id), val(medium), path(model)
     path escher_map
 
-    output:
+   output:
     tuple val(sample_id),
-          val(medium),
-          path("${sample_id}.${medium}.escher.html"),
-          emit: html
+        val(medium),
+        path("*.escher.html", arity: '1'),
+        emit: html
 
-    path "${sample_id}.${medium}.escher.log",
-         emit: logs
+    path "*.escher.log",
+        arity: '1',
+        emit: logs
 
     script:
     def prefix = "${sample_id}.${medium}"
