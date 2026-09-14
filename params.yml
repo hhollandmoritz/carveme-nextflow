@@ -6,7 +6,7 @@ carveme_args: "" # use for other carvme arguments, ex: "--default-score -2"
 
 # Universe settings, only use one
 universe: "gramneg"
-universe_file: null # change to path to custom universe file
+#universe_file: /home/hahollan/MIRA/fba_aab/carveme-nextflow/assets/universe/iAp386B454_bigg.xml # change to path to custom universe file
 
 # Media options, each media option that is not null will be run
 media_databases:
@@ -18,6 +18,10 @@ media_databases:
 # Cobrapy settings
 run_cobra: true
 bigg_metabolites: assets/bigg_models_metabolites.txt
+
+# For escher map-building module
+escher_map: "assets/escher/iJO1366.Central_metabolism.json"
+escher_reaction_scale_preset: "GaBuRd"
 
 # The following are optionally defined in the yml file, but have defaults
 # in the nextflow config.script. Only modify here if you want to overwrite 

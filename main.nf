@@ -8,6 +8,8 @@ include {
 
 include { COBRA_ANALYSIS } from './subworkflows/local/cobra_analysis'
 
+include { BUILD_ESCHER_MAP } from './modules/local/build_escher_map'
+
 workflow {
 
     log.info "Project directory: ${projectDir}"
@@ -196,4 +198,17 @@ workflow {
             cobra_summary_options_ch
         )
     }
+
+    /*
+     * Build Escher maps
+     */
+    if (params.escher_map) {
+        escher_map_ch = Channel.value(
+            file(params.escher_map, checkIfExists: true)
+        )
+        BUILD_ESCHER_MAP(
+            models_ch.map { sample_id, medium, model -> tuple(sample_id, medium, model) },
+            escher_map_ch
+        )
+
 }
