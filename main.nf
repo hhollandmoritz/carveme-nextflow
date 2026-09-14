@@ -210,5 +210,6 @@ workflow {
             models_ch.map { sample_id, medium, model -> tuple(sample_id, medium, model) },
             escher_map_ch
         )
+    }
 
 }
