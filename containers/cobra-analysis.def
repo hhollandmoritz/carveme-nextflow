@@ -9,8 +9,6 @@ From: continuumio/miniconda3:24.11.1-0
 %environment
     export LC_ALL=C
     export MPLBACKEND=Agg
-    export HOME=/tmp
-    export XDG_CACHE_HOME=/tmp/.cache
     source /opt/conda/etc/profile.d/conda.sh
 
 %post

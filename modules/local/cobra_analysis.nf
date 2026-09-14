@@ -57,13 +57,18 @@ process RUN_COBRA_MODEL {
     def argument_string = args.join(' \\\n        ')
 
     """
-    run_cobra_model.py \\
-        '${model}' \\
-        --output-dir . \\
-        --name '${sample_id}.${medium}' \\
-        --prefix '${prefix}' \\
-        --label 'sample_id=${sample_id}' \\
-        --label 'medium=${medium}' \\
+    export HOME="\$PWD/.home"
+    export XDG_CACHE_HOME="\$PWD/.cache"
+
+    mkdir -p "\$HOME" "\$XDG_CACHE_HOME"
+
+    run_cobra_model.py \
+        '${model}' \
+        --output-dir . \
+        --name '${sample_id}.${medium}' \
+        --prefix '${prefix}' \
+        --label 'sample_id=${sample_id}' \
+        --label 'medium=${medium}' \
         ${argument_string}
     """
 
@@ -142,11 +147,16 @@ process SUMMARIZE_COBRA_MODELS {
     def argument_string = args.join(' \\\n        ')
 
     """
+    export HOME="\$PWD/.home"
+    export XDG_CACHE_HOME="\$PWD/.cache"
+
+    mkdir -p "\$HOME" "\$XDG_CACHE_HOME"
+
     mkdir -p comparison
 
-    summarize_cobra_models.py \\
-        --results . \\
-        --output-dir comparison \\
+    summarize_cobra_models.py \
+        --results . \
+        --output-dir comparison \
         ${argument_string}
     """
 

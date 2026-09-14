@@ -22,6 +22,11 @@ process BUILD_ESCHER_MAP {
     """
     set -o pipefail
 
+    export HOME="\$PWD/.home"
+    export XDG_CACHE_HOME="\$PWD/.cache"
+
+    mkdir -p "\$HOME" "\$XDG_CACHE_HOME"
+
     build_escher_map.py \
         --model '${model}' \
         --map '${escher_map}' \
