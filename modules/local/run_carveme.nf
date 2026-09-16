@@ -7,6 +7,8 @@ process RUN_CARVEME_DEFAULT {
           path(faa),
           val(medium)
 
+    path soft_constraints
+
     output:
     tuple val(sample_id),
           val(medium),
@@ -30,6 +32,9 @@ process RUN_CARVEME_DEFAULT {
             ? "--universe '${params.universe}'"
             : ""
 
+    def soft_constraints_arg = soft_constraints
+        ? "--soft '${soft_constraints}'"
+        : ""
     """
     set -o pipefail
 
@@ -39,6 +44,7 @@ process RUN_CARVEME_DEFAULT {
         --init '${medium}' \
         ${universe_arg} \
         --solver '${params.solver}' \
+        ${soft_constraints_arg} \
         ${carveme_args} \
         --verbose \
         2>&1 | tee '${log}'
@@ -49,6 +55,8 @@ process RUN_CARVEME_DEFAULT {
     echo 'Stub built-in medium run: ${sample_id} ${medium}' \
         > '${sample_id}.${medium}.log'
     echo 'Universe: ${params.universe ?: ''}' \
+        >> '${sample_id}.${medium}.log'
+    echo 'Soft constraints: ${params.carveme_soft_constraints ?: ''}' \
         >> '${sample_id}.${medium}.log'
     echo 'Universe file: ${params.universe_file ?: ''}' \
         >> '${sample_id}.${medium}.log'
@@ -66,6 +74,8 @@ process RUN_CARVEME_CUSTOM {
           path(faa),
           val(medium),
           path(mediadb)
+    
+    path soft_constraints
 
     output:
     tuple val(sample_id),
@@ -89,6 +99,10 @@ process RUN_CARVEME_CUSTOM {
         ? "--universe '${params.universe}'"
         : ""
 
+    def soft_constraints_arg = soft_constraints
+        ? "--soft '${soft_constraints}'"
+        : ""
+
     """
     set -o pipefail
 
@@ -99,6 +113,7 @@ process RUN_CARVEME_CUSTOM {
         --mediadb '${mediadb}' \
         ${universe_arg} \
         --solver '${params.solver}' \
+        ${soft_constraints_arg} \
         ${carveme_args} \
         --verbose \
         2>&1 | tee '${log}'
@@ -110,6 +125,8 @@ process RUN_CARVEME_CUSTOM {
     echo 'Stub custom medium run: ${sample_id} ${medium} ${mediadb}' \
         > '${sample_id}.${medium}.log'
     echo 'Universe: ${params.universe ?: ''}' \
+        >> '${sample_id}.${medium}.log'
+    echo 'Soft constraints: ${params.carveme_soft_constraints ?: ''}' \
         >> '${sample_id}.${medium}.log'
     echo 'Universe file: ${params.universe_file ?: ''}' \
         >> '${sample_id}.${medium}.log'
@@ -126,6 +143,7 @@ process RUN_CARVEME_NO_GAPFILL {
         tuple val(sample_id), 
         path(faa)
 
+    path soft_constraints
     output:
     tuple val(sample_id),
           val('NO_GAPFILL'),
@@ -148,6 +166,9 @@ process RUN_CARVEME_NO_GAPFILL {
             ? "--universe '${params.universe}'"
             : ""
 
+    def soft_constraints_arg = soft_constraints
+        ? "--soft '${soft_constraints}'"
+        : ""
     """
     set -o pipefail
 
@@ -155,6 +176,7 @@ process RUN_CARVEME_NO_GAPFILL {
         --output '${model}' \
         ${universe_arg} \
         --solver '${params.solver}' \
+        ${soft_constraints_arg} \
         ${carveme_args} \
         --verbose \
         2>&1 | tee '${log}'
@@ -168,6 +190,8 @@ process RUN_CARVEME_NO_GAPFILL {
     echo 'Universe: ${params.universe ?: ''}' \
         >> '${sample_id}.no-gapfill.log'
     echo 'Universe file: ${params.universe_file ?: ''}' \
+        >> '${sample_id}.no-gapfill.log'
+    echo 'Soft constraints: ${params.carveme_soft_constraints ?: ''}' \
         >> '${sample_id}.no-gapfill.log'
     echo 'Extra args: ${params.carveme_args ?: ''}' \
         >> '${sample_id}.no-gapfill.log'

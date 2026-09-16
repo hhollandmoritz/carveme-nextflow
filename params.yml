@@ -8,6 +8,9 @@ carveme_args: "" # use for other carvme arguments, ex: "--default-score -2"
 universe: "gramneg"
 #universe_file: /home/hahollan/MIRA/fba_aab/carveme-nextflow/assets/universe/iAp386B454_bigg.xml # change to path to custom universe file
 
+# Soft reconstruction constraints (optional); to disable, set to null
+carveme_soft_constraints: "assets/carveme_soft_constraints.tsv"
+
 # Media options, each media option that is not null will be run
 media_databases:
   NO_GAPFILL: null

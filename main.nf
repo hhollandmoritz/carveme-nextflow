@@ -36,6 +36,14 @@ workflow {
         .map { faa ->
             tuple(faa.baseName, faa)
         }
+    /*
+    * CarveMe soft-constraint file.
+    */
+    carveme_soft_constraints_ch = Channel.value(
+        params.carveme_soft_constraints
+            ? file(params.carveme_soft_constraints, checkIfExists: true)
+            : []
+    )
 
     /*
      * Optional/modifiable arguments 
@@ -66,7 +74,8 @@ workflow {
      * Non-gap-filled models
      */
     if (run_no_gapfill) {
-        RUN_CARVEME_NO_GAPFILL(genomes_ch)
+        RUN_CARVEME_NO_GAPFILL(genomes_ch, 
+        carveme_soft_constraints_ch)
     }
 
     /*
@@ -116,8 +125,14 @@ workflow {
                 tuple(sample_id, faa, medium, mediadb)
             }
 
-        RUN_CARVEME_DEFAULT(default_jobs_ch)
-        RUN_CARVEME_CUSTOM(custom_jobs_ch)
+        RUN_CARVEME_DEFAULT(
+            default_jobs_ch,
+            carveme_soft_constraints_ch
+            )
+        RUN_CARVEME_CUSTOM(
+            custom_jobs_ch,
+            carveme_soft_constraints_ch
+            )
 
         gapfill_models_ch = RUN_CARVEME_DEFAULT.out.models
             .mix(RUN_CARVEME_CUSTOM.out.models)
