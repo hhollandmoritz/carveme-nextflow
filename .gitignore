@@ -6,3 +6,4 @@ genomes/*
 containers/*.log
 .nextflow/
 .nextflow.log*
+.Rproj.user

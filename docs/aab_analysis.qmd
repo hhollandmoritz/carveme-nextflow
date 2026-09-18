@@ -1,0 +1,74 @@
+---
+title: "AAB_analysis"
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+## 
+## Read in analysis
+
+
+```{r}
+library(tidyverse)
+library(pheatmap)
+library(here)
+
+ggplot2::theme_set(theme_bw())
+```
+
+You can add options to executable code like this
+
+```{r}
+flux_sum.raw <- read_tsv(file = here("docs/data/cobra/comparison/compound_fluxes.tsv"))
+
+flux_sum <- flux_sum.raw %>%
+  mutate(genome = gsub("_assembly_called_genes", "", sample_id))
+  
+
+flux_sum %>%
+  group_by(modelseed_name) %>%
+  summarize(flux = mean(flux, na.rm = T)) %>%
+  mutate(direction = case_when(flux > 0 ~"uptake", 
+                               flux < 0 ~ "secretion",
+                               .default = "balanced/none")) %>%
+  arrange(desc(flux))
+
+```
+
+```{r}
+reactions_raw <- read_tsv(file = here("docs/data/cobra/comparison/reaction_fluxes.tsv"))
+
+reactions_sum <- reactions_raw %>%
+  mutate(genome = gsub("_assembly_called_genes", "", sample_id))
+  
+
+
+ADH_membrane <- "R09479"
+
+reactions_sum %>%
+  group_by(modelseed_id, modelseed_name, modelseed_aliases) %>%
+  summarize(flux = mean(flux, na.rm = T)) %>%
+  arrange(desc(flux)) %>% View()
+
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+```{r}
+
+flux_sum %>%
+  filter(direction != "inactive") %>%
+ggplot(aes(x = metabolite_name, y = genome, fill = flux)) +
+  geom_tile() +
+  scale_fill_distiller(palette = "RdBu") +
+  facet_wrap(~direction,ncol = 1, scales = "free_x") +
+  theme(axis.text.x = element_text(angle = 45, hjust =1)) +
+  ggtitle("Boundary Metabolite Fluxes", 
+          subtitle = "red = uptake, blue = secretion")
+
+
+
+
+```
+
