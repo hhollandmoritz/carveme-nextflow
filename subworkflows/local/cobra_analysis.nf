@@ -7,16 +7,16 @@ include {
  * Input `models` must contain:
  *   tuple(sample_id, medium, model)
  *
- * `cobra_medium` and `bigg_metabolites` are value channels containing either
+ * `cobra_medium`, `modelseed_db` 
+ * are value channels containing either
  * one staged file or an empty list (`[]`).
  */
 workflow COBRA_ANALYSIS {
     take:
     models
     cobra_medium
-    bigg_metabolites
+    modelseed_db
     run_options
-    summary_options
 
     main:
     RUN_COBRA_MODEL(
@@ -38,11 +38,9 @@ workflow COBRA_ANALYSIS {
         .collect()
 
     SUMMARIZE_COBRA_MODELS(
-        model_tables,
         summary_tables,
         flux_tables,
-        bigg_metabolites,
-        summary_options
+        modelseed_db
     )
 
     emit:

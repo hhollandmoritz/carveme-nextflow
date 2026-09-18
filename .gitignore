@@ -1,9 +1,21 @@
 test-results/*
+test-results
+test-data
 test-data/*
+test-params
+tests
 work/
 results/
-genomes/*
+genomes
+assets/*media*
+assets/bigg*
+assets/carveme*
 containers/*.log
+containers/*.sif
 .nextflow/
 .nextflow.log*
+<<<<<<< HEAD
 .Rproj.user
+=======
+bin/__pycache__/
+>>>>>>> add_gapseq

@@ -6,6 +6,8 @@ include {
     RUN_CARVEME_NO_GAPFILL
  } from './modules/local/run_carveme'
 
+include { RUN_GAPSEQ } from './modules/local/run_gapseq'
+
 include { COBRA_ANALYSIS } from './subworkflows/local/cobra_analysis'
 
 include { BUILD_ESCHER_MAP } from './modules/local/build_escher_map'
@@ -38,115 +40,172 @@ workflow {
         }
 
     /*
-     * Optional/modifiable arguments 
-     * (media, extra carveme arguments)
-     */
-    media_config = params.media_databases ?: [:]
-
-    /*
-     * Run without gap-filling when:
+     * Collect models produced by all model reconstruction tools.
      *
-     * 1. No media configuration was supplied, or
-     * 2. NO_GAPFILL was explicitly requested.
+     * Model format:
+     * tuple(sample_id, medium, model)
      */
-    run_no_gapfill = media_config.isEmpty() ||
-        media_config.containsKey('NO_GAPFILL')
+    all_models_ch = Channel.empty()
 
     /*
-     * Remove the special non-media condition before processing
-     * actual media.
+     * gapseq reconstruction
      */
-    gapfill_config = media_config.findAll { medium, mediadb ->
-        medium.toString() != 'NO_GAPFILL'
-    }
+    if (params.run_gapseq) {
 
-    run_gapfill = !gapfill_config.isEmpty()
-
-    /*
-     * Non-gap-filled models
-     */
-    if (run_no_gapfill) {
-        RUN_CARVEME_NO_GAPFILL(genomes_ch)
-    }
-
-    /*
-     * Gap-filled models
-     */
-    if (run_gapfill) {
+        RUN_GAPSEQ(genomes_ch)
 
         /*
-         * Built-in media have no custom database.
+         * emits:
+         * tuple(sample_id, model)
+         *
+         * We add a label so that it matches the
+         * tuple expected by COBRApy and Escher:
+         * tuple(sample_id, medium, model)
+         * later if medium is changed, we can 
+         * update to reflect the custom media
          */
-        default_media = gapfill_config
-            .findAll { medium, mediadb -> mediadb == null }
-            .keySet()
-            .collect { medium ->
-                medium.toString()
+        gapseq_models_ch = RUN_GAPSEQ.out.models
+            .map { sample_id, model ->
+                tuple(sample_id, 'GAPSEQ_AUTO', model)
             }
 
+        all_models_ch = all_models_ch.mix(gapseq_models_ch)
+    }
+   
+    if (params.run_carveme) {
         /*
-         * Custom media have an associated database file.
-         */
-        custom_media = gapfill_config
-            .findAll { medium, mediadb -> mediadb != null }
-            .collect { medium, mediadb ->
-                tuple(
-                    medium.toString(),
-                    file(mediadb, checkIfExists: true)
+        * CarveMe soft-constraint file.
+        */
+        carveme_soft_constraints_ch = Channel.value(
+            params.carveme_soft_constraints
+                ? file(params.carveme_soft_constraints, checkIfExists: true)
+                : []
+        )
+
+        /*
+        * Optional/modifiable arguments 
+        * (media, extra carveme arguments)
+        */
+        media_config = params.media_databases ?: [:]
+
+        /*
+        * Run without gap-filling when:
+        *
+        * 1. No media configuration was supplied, or
+        * 2. NO_GAPFILL was explicitly requested.
+        */
+        run_no_gapfill = media_config.isEmpty() ||
+            media_config.containsKey('NO_GAPFILL')
+
+        /*
+        * Remove the special non-media condition before processing
+        * actual media.
+        */
+        gapfill_config = media_config.findAll { medium, mediadb ->
+            medium.toString() != 'NO_GAPFILL'
+        }
+
+        run_gapfill = !gapfill_config.isEmpty()
+
+        /*
+        * Non-gap-filled models
+        */
+        if (run_no_gapfill) {
+            RUN_CARVEME_NO_GAPFILL(genomes_ch, 
+            carveme_soft_constraints_ch)
+        }
+
+        /*
+        * Gap-filled models
+        */
+        if (run_gapfill) {
+
+            /*
+            * Built-in media have no custom database.
+            */
+            default_media = gapfill_config
+                .findAll { medium, mediadb -> mediadb == null }
+                .keySet()
+                .collect { medium ->
+                    medium.toString()
+                }
+
+            /*
+            * Custom media have an associated database file.
+            */
+            custom_media = gapfill_config
+                .findAll { medium, mediadb -> mediadb != null }
+                .collect { medium, mediadb ->
+                    tuple(
+                        medium.toString(),
+                        file(mediadb, checkIfExists: true)
+                    )
+                }
+
+            /*
+            * Emit:
+            * tuple(sample_id, faa, medium)
+            */
+            default_jobs_ch = genomes_ch
+                .combine(channel.fromList(default_media))
+                .map { sample_id, faa, medium ->
+                    tuple(sample_id, faa, medium)
+                }
+
+            /*
+            * Emit:
+            * tuple(sample_id, faa, medium, mediadb)
+            */
+            custom_jobs_ch = genomes_ch
+                .combine(channel.fromList(custom_media))
+                .map { sample_id, faa, medium, mediadb ->
+                    tuple(sample_id, faa, medium, mediadb)
+                }
+
+            RUN_CARVEME_DEFAULT(
+                default_jobs_ch,
+                carveme_soft_constraints_ch
                 )
-            }
+            RUN_CARVEME_CUSTOM(
+                custom_jobs_ch,
+                carveme_soft_constraints_ch
+                )
+
+            gapfill_models_ch = RUN_CARVEME_DEFAULT.out.models
+                .mix(RUN_CARVEME_CUSTOM.out.models)
+
+            gapfill_logs_ch = RUN_CARVEME_DEFAULT.out.logs
+                .mix(RUN_CARVEME_CUSTOM.out.logs)
+        }
 
         /*
-         * Emit:
-         * tuple(sample_id, faa, medium)
-         */
-        default_jobs_ch = genomes_ch
-            .combine(channel.fromList(default_media))
-            .map { sample_id, faa, medium ->
-                tuple(sample_id, faa, medium)
-            }
+        * Create unified output channels.
+        */
+        if (run_no_gapfill && run_gapfill) {
 
+            models_ch = RUN_CARVEME_NO_GAPFILL.out.models
+                .mix(gapfill_models_ch)
+
+            logs_ch = RUN_CARVEME_NO_GAPFILL.out.logs
+                .mix(gapfill_logs_ch)
+
+        } else if (run_no_gapfill) {
+
+            models_ch = RUN_CARVEME_NO_GAPFILL.out.models
+            logs_ch   = RUN_CARVEME_NO_GAPFILL.out.logs
+
+        } else {
+
+            models_ch = gapfill_models_ch
+            logs_ch   = gapfill_logs_ch
+        }
         /*
-         * Emit:
-         * tuple(sample_id, faa, medium, mediadb)
+         * Add CarveMe reconstructions to the
+         * model channel for downstream analysis.
          */
-        custom_jobs_ch = genomes_ch
-            .combine(channel.fromList(custom_media))
-            .map { sample_id, faa, medium, mediadb ->
-                tuple(sample_id, faa, medium, mediadb)
-            }
-
-        RUN_CARVEME_DEFAULT(default_jobs_ch)
-        RUN_CARVEME_CUSTOM(custom_jobs_ch)
-
-        gapfill_models_ch = RUN_CARVEME_DEFAULT.out.models
-            .mix(RUN_CARVEME_CUSTOM.out.models)
-
-        gapfill_logs_ch = RUN_CARVEME_DEFAULT.out.logs
-            .mix(RUN_CARVEME_CUSTOM.out.logs)
+        all_models_ch = all_models_ch.mix(models_ch)
     }
 
-    /*
-     * Create unified output channels.
-     */
-    if (run_no_gapfill && run_gapfill) {
-
-        models_ch = RUN_CARVEME_NO_GAPFILL.out.models
-            .mix(gapfill_models_ch)
-
-        logs_ch = RUN_CARVEME_NO_GAPFILL.out.logs
-            .mix(gapfill_logs_ch)
-
-    } else if (run_no_gapfill) {
-
-        models_ch = RUN_CARVEME_NO_GAPFILL.out.models
-        logs_ch   = RUN_CARVEME_NO_GAPFILL.out.logs
-
-    } else {
-
-        models_ch = gapfill_models_ch
-        logs_ch   = gapfill_logs_ch
-    }
     /*
      * COBRApy analysis
      */
@@ -156,11 +215,18 @@ workflow {
                 ? file(params.cobra_medium, checkIfExists: true)
                 : []
         )
+        /* 
+        * Hannah note; instead of this being an error, can we make it a warning that outputs will not be transformed
+        */ 
+        if (!params.modelseed_db) {
+            error "COBRA summarization requires --modelseed_db."
+        }
 
-        bigg_metabolites_ch = Channel.value(
-            params.bigg_metabolites
-                ? file(params.bigg_metabolites, checkIfExists: true)
-                : []
+        modelseed_db_ch = Channel.value(
+            file(
+                params.modelseed_db,
+                checkIfExists: true
+            )
         )
 
         cobra_run_options_ch = Channel.value([
@@ -174,28 +240,13 @@ workflow {
             fail_on_nonoptimal               : params.cobra_fail_on_nonoptimal,
             extra_args                       : params.cobra_run_args
         ])
-
-        cobra_summary_options_ch = Channel.value([
-            outputs                  : params.cobra_outputs,
-            row_columns              : params.cobra_row_columns,
-            row_separator            : params.cobra_row_separator,
-            summary_column           : params.cobra_summary_column,
-            summary_boundary_types   : params.cobra_summary_boundary_types,
-            min_abs_flux             : params.cobra_min_abs_flux,
-            top_n                    : params.cobra_top_n,
-            heatmap_transform        : params.cobra_heatmap_transform,
-            figure_format            : params.cobra_figure_format,
-            dpi                      : params.cobra_dpi,
-            include_nonoptimal       : params.cobra_include_nonoptimal,
-            extra_args               : params.cobra_summary_args
-        ])
+        
 
         COBRA_ANALYSIS(
-            models_ch,
+            all_models_ch,
             cobra_medium_ch,
-            bigg_metabolites_ch,
+            modelseed_db_ch,
             cobra_run_options_ch,
-            cobra_summary_options_ch
         )
     }
 
@@ -207,7 +258,7 @@ workflow {
             file(params.escher_map, checkIfExists: true)
         )
         BUILD_ESCHER_MAP(
-            models_ch.map { sample_id, medium, model -> tuple(sample_id, medium, model) },
+            all_models_ch,
             escher_map_ch
         )
     }
