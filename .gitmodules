@@ -1,0 +1,3 @@
+[submodule "assets/ModelSEEDDatabase"]
+	path = assets/ModelSEEDDatabase
+	url = https://github.com/ModelSEED/ModelSEEDDatabase.git
