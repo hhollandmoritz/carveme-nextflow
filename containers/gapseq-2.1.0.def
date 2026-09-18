@@ -1,0 +1,48 @@
+Bootstrap: docker
+From: condaforge/miniforge3:25.3.0-3
+
+%labels
+    Author Hannah Holland-Moritz
+    Version 2.1.0
+    Description gapseq 2.1.0 for genome-scale metabolic reconstruction
+
+%environment
+    export PATH=/opt/conda/bin:$PATH
+    export LANG=C.UTF-8
+    export LC_ALL=C.UTF-8
+
+%post
+    set -eux
+
+    # Use strict channel priority for reproducibility
+    conda config --system --set channel_priority strict
+
+    # Install gapseq and its runtime dependencies.
+    # DIAMOND is specified explicitly because the Nextflow module
+    # uses it as the default sequence aligner.
+    conda install -y \
+        -c conda-forge \
+        -c bioconda \
+        "gapseq=2.1.0" \
+        "diamond>=2.1.9"
+
+    # Reduce final image size
+    conda clean -afy
+
+    # Basic installation checks
+    gapseq -v
+    diamond version
+    glpsol --version
+
+    Rscript -e 'library(cobrar); cat("cobrar loaded successfully\n")'
+    Rscript -e 'library(Biostrings); cat("Biostrings loaded successfully\n")'
+
+%runscript
+    exec gapseq "$@"
+
+%test
+    gapseq -v
+    diamond version
+    glpsol --version
+    Rscript -e 'library(cobrar)'
+    Rscript -e 'library(Biostrings)'

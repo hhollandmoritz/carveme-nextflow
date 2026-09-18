@@ -1,5 +1,10 @@
-input: "genomes/*.faa"
+input: "genomes/*.faa" #"genomes/G_011_1B_oryzifermentans_assembly_called_genes.faa" #"genomes/*.faa"
 outdir: "results"
+
+# ============================================================
+# carveme settings
+# ============================================================
+run_carveme: false
 solver: "scip"
 
 carveme_args: "" # use for other carvme arguments, ex: "--default-score -2"
@@ -18,13 +23,37 @@ media_databases:
   SDMM: "assets/SDMM_media.tsv"
   "SDMM_ETOH": "assets/SDMM_media_etoh.tsv"
 
-# Cobrapy settings
+# ============================================================
+# gapseq settings
+# ============================================================
+
+run_gapseq: true
+
+# Sequence alignment backend:
+# options are blast, diamond, or mmseqs2
+gapseq_aligner: "diamond"
+
+# Restrict reference sequences to bacterial proteins
+gapseq_taxonomy: "Bacteria"
+
+# null = allow gapseq to predict the gap-filling medium automatically
+# Later this can point to a gapseq-formatted medium file
+gapseq_medium: null
+
+# Optional external gapseq sequence database.
+# Leave null for initial testing.
+gapseq_db: "/home/hahollan/MIRA/fba_aab/carveme-nextflow/assets/gapseq_db"
+
+# Additional arguments passed directly to gapseq doall
+gapseq_args: ""
+
+
+# ============================================================
+# # Cobrapy settings
+# ============================================================
+
 run_cobra: true
 bigg_metabolites: assets/bigg_models_metabolites.txt
-
-# For escher map-building module
-escher_map: "assets/escher/iJO1366.Central_metabolism.json"
-escher_reaction_scale_preset: "GaBuRd"
 
 # The following are optionally defined in the yml file, but have defaults
 # in the nextflow config.script. Only modify here if you want to overwrite 
@@ -57,5 +86,15 @@ escher_reaction_scale_preset: "GaBuRd"
 
 # cobra_top_n: 50
 # cobra_heatmap_transform: "signed-log1p"
+
+# ============================================================
+# # Escher settings
+# ============================================================
+
+# For escher map-building module
+escher_map: "assets/escher/iJO1366.Central_metabolism.json"
+escher_reaction_scale_preset: "GaBuRd"
+
+
 
 
