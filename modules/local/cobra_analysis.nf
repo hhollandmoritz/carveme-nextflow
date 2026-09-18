@@ -101,7 +101,8 @@ process SUMMARIZE_COBRA_MODELS {
     path model_tables
     path summary_tables
     path flux_tables
-    path bigg_metabolites
+    path modelseed_compounds
+    path modelseed_compound_aliases
     val options
 
     output:
@@ -134,11 +135,12 @@ process SUMMARIZE_COBRA_MODELS {
     }
 
     /*
-     * This option is added only when a BiGG file is supplied. It therefore
-     * remains compatible with the non-BiGG summarizer when the parameter is null.
+     * This option is added only when a modelseed file is supplied. It therefore
+     * remains compatible with the non-modelseed summarizer when the parameter is null.
      */
-    if (bigg_metabolites) {
-        args << "--bigg-metabolites '${bigg_metabolites}'"
+    if (modelseed_compounds && modelseed_compound_aliases) {
+        args << "--modelseed-compounds '${modelseed_compounds}'"
+        args << "--modelseed-compound-aliases '${modelseed_compound_aliases}'"
     }
     if (options.extra_args) {
         args << options.extra_args.toString()

@@ -53,7 +53,7 @@ gapseq_args: ""
 # ============================================================
 
 run_cobra: true
-bigg_metabolites: assets/bigg_models_metabolites.txt
+modelseed_db: "assets/ModelSEEDDatabase"
 
 # The following are optionally defined in the yml file, but have defaults
 # in the nextflow config.script. Only modify here if you want to overwrite 

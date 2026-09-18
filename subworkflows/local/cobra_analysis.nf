@@ -7,14 +7,16 @@ include {
  * Input `models` must contain:
  *   tuple(sample_id, medium, model)
  *
- * `cobra_medium` and `bigg_metabolites` are value channels containing either
+ * `cobra_medium`, `modelseed_compounds`, and `modelseed_compound_aliases` 
+ * are value channels containing either
  * one staged file or an empty list (`[]`).
  */
 workflow COBRA_ANALYSIS {
     take:
     models
     cobra_medium
-    bigg_metabolites
+    modelseed_compounds
+    modelseed_compound_aliases
     run_options
     summary_options
 
@@ -41,7 +43,8 @@ workflow COBRA_ANALYSIS {
         model_tables,
         summary_tables,
         flux_tables,
-        bigg_metabolites,
+        modelseed_compounds,
+        modelseed_compound_aliases,
         summary_options
     )
 
