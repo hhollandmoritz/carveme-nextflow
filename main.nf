@@ -215,23 +215,18 @@ workflow {
                 ? file(params.cobra_medium, checkIfExists: true)
                 : []
         )
+        /* 
+        * Hannah note; instead of this being an error, can we make it a warning that outputs will not be transformed
+        */ 
+        if (!params.modelseed_db) {
+            error "COBRA summarization requires --modelseed_db."
+        }
 
-        modelseed_compounds_ch = Channel.value(
-            params.modelseed_db
-                ? file(
-                    "${params.modelseed_db}/Biochemistry/compounds.tsv",
-                    checkIfExists: true
-                )
-                : []
-        )
-
-        modelseed_compound_aliases_ch = Channel.value(
-            params.modelseed_db
-                ? file(
-                    "${params.modelseed_db}/Biochemistry/Aliases/Unique_ModelSEED_Compound_Aliases.txt",
-                    checkIfExists: true
-                )
-                : []
+        modelseed_db_ch = Channel.value(
+            file(
+                params.modelseed_db,
+                checkIfExists: true
+            )
         )
 
         cobra_run_options_ch = Channel.value([
@@ -245,38 +240,13 @@ workflow {
             fail_on_nonoptimal               : params.cobra_fail_on_nonoptimal,
             extra_args                       : params.cobra_run_args
         ])
-        /*
-        * Use ModelSEED metabolite IDs for comparisons when
-        * ModelSEED metadata is available. Otherwise use model IDs from model.
-        */
-        summary_column = params.cobra_summary_column ?: (
-            params.modelseed_db
-                ? 'canonical_metabolite'
-                : 'metabolite'
-        )
-
-        cobra_summary_options_ch = Channel.value([
-            outputs                  : params.cobra_outputs,
-            row_columns              : params.cobra_row_columns,
-            row_separator            : params.cobra_row_separator,
-            summary_column           : params.summary_column,
-            summary_boundary_types   : params.cobra_summary_boundary_types,
-            min_abs_flux             : params.cobra_min_abs_flux,
-            top_n                    : params.cobra_top_n,
-            heatmap_transform        : params.cobra_heatmap_transform,
-            figure_format            : params.cobra_figure_format,
-            dpi                      : params.cobra_dpi,
-            include_nonoptimal       : params.cobra_include_nonoptimal,
-            extra_args               : params.cobra_summary_args
-        ])
+        
 
         COBRA_ANALYSIS(
             all_models_ch,
             cobra_medium_ch,
-            modelseed_compounds_ch,
-            modelseed_compound_aliases_ch,
+            modelseed_db_ch,
             cobra_run_options_ch,
-            cobra_summary_options_ch
         )
     }
 

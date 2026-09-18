@@ -1,912 +1,610 @@
 #!/usr/bin/env python3
-"""Aggregate and compare outputs produced by run_cobra_model.py."""
+"""Annotate COBRA flux outputs with ModelSEED metadata and draw heatmaps."""
 
 from __future__ import annotations
 
 import argparse
 import re
-import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-OUTPUT_CHOICES = (
-    "growth-table",
-    "summary-long",
-    "summary-matrix",
-    "summary-heatmap",
-    "reaction-long",
-    "reaction-matrix",
-    "reaction-heatmap",
-    "all",
+# ModelSEEDDatabase file paths relative to the root
+COMPOUNDS_FILE = Path("Biochemistry/compounds.tsv")
+COMPOUND_ALIASES_FILE = Path(
+    "Biochemistry/Aliases/Unique_ModelSEED_Compound_Aliases.txt"
 )
-
-ALL_OUTPUTS = tuple(
-    choice for choice in OUTPUT_CHOICES
-    if choice != "all"
+REACTIONS_FILE = Path("Biochemistry/reactions.tsv")
+REACTION_ALIASES_FILE = Path(
+    "Biochemistry/Aliases/Unique_ModelSEED_Reaction_Aliases.txt"
+)
+REACTION_ECS_FILE = Path(
+    "Biochemistry/Aliases/Unique_ModelSEED_Reaction_ECs.txt"
 )
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build command-line argument parser."""
-
+    """Build the command-line parser."""
     parser = argparse.ArgumentParser(
         description=(
-            "Combine per-model COBRA result tables into comparison "
-            "tables and heat maps."
+            "Combine run_cobra_model.py outputs, annotate compounds and "
+            "reactions with ModelSEED metadata, and draw flux heatmaps."
         )
     )
-
     parser.add_argument(
         "--results",
         type=Path,
         nargs="+",
         required=True,
-        help=(
-            "Result files or directories containing *.model.tsv, "
-            "*.summary.tsv, and *.fluxes.tsv."
-        ),
+        help="Files or directories containing *.summary.tsv and *.fluxes.tsv.",
     )
-
     parser.add_argument(
         "--output-dir",
         type=Path,
         required=True,
-        help="Directory for combined tables and figures.",
+        help="Directory for annotated tables and heatmaps.",
     )
-
     parser.add_argument(
-        "--outputs",
-        choices=OUTPUT_CHOICES,
-        nargs="+",
-        default=[
-            "growth-table",
-            "summary-matrix",
-            "summary-heatmap",
-        ],
-        help="Products to create. Use 'all' for every product.",
-    )
-
-    parser.add_argument(
-        "--row-columns",
-        nargs="+",
-        default=["model_name"],
-        help=(
-            "Columns used to identify matrix/heat-map rows. "
-            "Example: --row-columns sample_id medium"
-        ),
-    )
-
-    parser.add_argument(
-        "--row-separator",
-        default=" | ",
-        help="Separator used when combining row identifiers.",
-    )
-
-    parser.add_argument(
-        "--summary-column",
-        choices=(
-            "metabolite",
-            "canonical_metabolite",
-            "modelseed_id",
-            "reaction",
-        ),
-        default="metabolite",
-        help=(
-            "Column used for model.summary() matrices. "
-            "canonical_metabolite compares metabolites across "
-            "reconstruction systems using ModelSEED identifiers."
-        ),
-    )
-
-    parser.add_argument(
-        "--summary-boundary-types",
-        nargs="+",
-        choices=("exchange", "demand", "sink", "boundary"),
-        default=["exchange"],
-        help="Boundary reaction types included in summary products.",
-    )
-
-    parser.add_argument(
-        "--min-abs-flux",
-        type=float,
-        default=1e-9,
-        help="Fluxes below this absolute value are treated as zero.",
-    )
-
-    parser.add_argument(
-        "--top-n",
-        type=int,
-        default=50,
-        help=(
-            "Maximum number of heat-map columns, selected by variance. "
-            "Use 0 for all."
-        ),
-    )
-
-    parser.add_argument(
-        "--heatmap-transform",
-        choices=("none", "signed-log1p"),
-        default="none",
-        help="Optional display-only transformation for heat maps.",
-    )
-
-    parser.add_argument(
-        "--figure-format",
-        choices=("png", "pdf", "svg"),
-        default="png",
-        help="Heat-map file format.",
-    )
-
-    parser.add_argument(
-        "--dpi",
-        type=int,
-        default=300,
-        help="Raster image resolution.",
-    )
-
-    parser.add_argument(
-        "--include-nonoptimal",
-        action="store_true",
-        help="Include non-optimal models in flux comparisons.",
-    )
-
-    parser.add_argument(
-        "--modelseed-compounds",
+        "--modelseed-db",
         type=Path,
-        default=None,
-        help="Path to ModelSEED Biochemistry/compounds.tsv.",
+        required=True,
+        help="Root directory of a ModelSEEDDatabase checkout.",
     )
-
-    parser.add_argument(
-        "--modelseed-compound-aliases",
-        type=Path,
-        default=None,
-        help=(
-            "Path to ModelSEED "
-            "Biochemistry/Aliases/"
-            "Unique_ModelSEED_Compound_Aliases.txt."
-        ),
-    )
-
     return parser
 
 
-def read_results(
-    paths: list[Path],
-    suffix: str,
-) -> pd.DataFrame:
-    """Read and combine result tables matching a filename suffix."""
+def required_modelseed_file(root: Path, relative_path: Path) -> Path:
+    """Return a required file inside the ModelSEEDDatabase checkout."""
+    path = root / relative_path
+    if not path.is_file():
+        raise FileNotFoundError(f"Required ModelSEED file not found: {path}")
+    return path
 
-    files = []
+
+def read_tables(paths: list[Path], suffix: str) -> pd.DataFrame:
+    """Read and combine COBRA output tables matching a filename suffix."""
+    files: list[Path] = []
 
     for path in paths:
         if not path.exists():
-            raise FileNotFoundError(
-                f"Result path does not exist: {path}"
-            )
+            raise FileNotFoundError(f"Result path does not exist: {path}")
 
         if path.is_dir():
             files.extend(path.rglob(f"*{suffix}"))
-
         elif path.name.endswith(suffix):
             files.append(path)
 
     files = sorted(set(files))
 
     if not files:
-        raise ValueError(
-            f"No files ending in {suffix} were found."
-        )
+        raise ValueError(f"No files ending in {suffix} were found.")
 
     return pd.concat(
-        (
-            pd.read_csv(path, sep="\t")
-            for path in files
-        ),
+        (pd.read_csv(path, sep="\t") for path in files),
         ignore_index=True,
         sort=False,
     )
 
 
-def read_modelseed_compounds(
-    compounds_path: Path,
-    aliases_path: Path,
-) -> pd.DataFrame:
-    """Build a lookup from ModelSEED and BiGG IDs to compound metadata."""
+def join_unique(values: pd.Series) -> str:
+    """Join unique non-empty strings."""
+    cleaned = {
+        str(value).strip()
+        for value in values
+        if str(value).strip()
+        and str(value).strip().lower() not in {"nan", "null", "none"}
+    }
+    return " | ".join(sorted(cleaned))
 
-    compounds = pd.read_csv(
-        compounds_path,
-        sep="\t",
-        dtype=str,
-        usecols=[
-            "id",
-            "name",
-            "abbreviation",
-            "formula",
-            "charge",
-        ],
-    ).rename(
-        columns={
-            "id": "modelseed_id",
-            "name": "metabolite_name",
-            "abbreviation": "metabolite_abbreviation",
+
+def read_aliases(path: Path) -> pd.DataFrame:
+    """Read a ModelSEED alias table."""
+    aliases = pd.read_csv(path, sep="\t", dtype=str, keep_default_na=False)
+
+    required = {"ModelSEED ID", "External ID", "Source"}
+    missing = required.difference(aliases.columns)
+
+    if missing:
+        raise ValueError(
+            f"{path} is missing required columns: {', '.join(sorted(missing))}"
+        )
+
+    return aliases
+
+
+def alias_metadata(aliases: pd.DataFrame) -> pd.DataFrame:
+    """Collapse external aliases and BiGG IDs by ModelSEED ID."""
+    working = aliases.copy()
+    working["alias"] = (
+        working["Source"].astype(str)
+        + ":"
+        + working["External ID"].astype(str)
+    )
+
+    all_aliases = (
+        working.groupby("ModelSEED ID")["alias"]
+        .agg(join_unique)
+        .rename("modelseed_aliases")
+        .reset_index()
+    )
+
+    bigg = working[
+        working["Source"].str.lower().str.startswith("bigg")
+    ]
+
+    bigg_ids = (
+        bigg.groupby("ModelSEED ID")["External ID"]
+        .agg(join_unique)
+        .rename("bigg_ids")
+        .reset_index()
+    )
+
+    return all_aliases.merge(
+        bigg_ids,
+        on="ModelSEED ID",
+        how="left",
+    )
+
+
+def build_lookup(
+    modelseed_ids: pd.Series,
+    aliases: pd.DataFrame,
+) -> tuple[pd.DataFrame, set[str]]:
+    """Build lookup keys from ModelSEED IDs and BiGG aliases."""
+
+    direct = pd.DataFrame(
+        {
+            "lookup_id": modelseed_ids.astype(str),
+            "modelseed_id": modelseed_ids.astype(str),
+            "mapping_source": "ModelSEED",
         }
     )
 
-    aliases = pd.read_csv(
-        aliases_path,
-        sep="\t",
-        dtype=str,
-        usecols=[
-            "ModelSEED ID",
-            "External ID",
-            "Source",
-        ],
+    bigg = aliases[
+        aliases["Source"].str.lower().str.startswith("bigg")
+    ][
+        ["ModelSEED ID", "External ID"]
+    ].rename(
+        columns={
+            "ModelSEED ID": "modelseed_id",
+            "External ID": "lookup_id",
+        }
     )
 
-    # Keep BiGG aliases only.
-    is_bigg = aliases["Source"].str.contains(
-        r"(?:^|\|)BiGG1?(?:\||$)",
-        regex=True,
-        na=False,
-    )
-
-    aliases = (
-        aliases.loc[
-            is_bigg,
-            ["ModelSEED ID", "External ID"],
-        ]
-        .rename(
-            columns={
-                "ModelSEED ID": "modelseed_id",
-                "External ID": "lookup_id",
-            }
-        )
-    )
-
-    aliases["mapping_source"] = "BiGG"
-
-    # ModelSEED IDs themselves are valid lookup IDs.
-    direct = compounds[["modelseed_id"]].copy()
-    direct["lookup_id"] = direct["modelseed_id"]
-    direct["mapping_source"] = "ModelSEED"
+    bigg["mapping_source"] = "BiGG"
 
     lookup = pd.concat(
-        [
-            direct,
-            aliases[
-                [
-                    "modelseed_id",
-                    "lookup_id",
-                    "mapping_source",
-                ]
-            ],
-        ],
+        [direct, bigg],
         ignore_index=True,
     ).drop_duplicates()
 
-    # Do not automatically use aliases that map to multiple
-    # ModelSEED compounds.
-    mapping_counts = (
+    # Find lookup IDs that refer to more than
+    # one ModelSEED feature.
+    counts = (
         lookup.groupby("lookup_id")["modelseed_id"]
-        .transform("nunique")
+        .nunique()
     )
 
-    lookup = lookup[mapping_counts == 1]
+    ambiguous = set(
+        counts[counts > 1].index.astype(str)
+    )
 
-    return lookup.merge(
-        compounds,
+    # Do not automatically resolve genuinely ambiguous mappings.
+    lookup = lookup[
+        ~lookup["lookup_id"].isin(ambiguous)
+    ].copy()
+
+    # Multiple records that point to the SAME ModelSEED ID are
+    # not ambiguous. Preserve all sources rather than choosing one.
+    lookup = (
+        lookup
+        .groupby(
+            ["lookup_id", "modelseed_id"],
+            as_index=False,
+        )["mapping_source"]
+        .agg(join_unique)
+    )
+
+    return lookup, ambiguous
+
+
+def load_compounds(
+    modelseed_db: Path,
+) -> tuple[pd.DataFrame, pd.DataFrame, set[str]]:
+    """Load ModelSEED compound metadata and lookup aliases."""
+    compounds = pd.read_csv(
+        required_modelseed_file(modelseed_db, COMPOUNDS_FILE),
+        sep="\t",
+        dtype=str,
+        keep_default_na=False,
+        usecols=["id", "name", "abbreviation", "formula", "charge"],
+    ).rename(
+        columns={
+            "id": "modelseed_id",
+            "name": "modelseed_name",
+            "abbreviation": "modelseed_abbreviation",
+        }
+    )
+
+    aliases = read_aliases(
+        required_modelseed_file(modelseed_db, COMPOUND_ALIASES_FILE)
+    )
+
+    metadata = compounds.merge(
+        alias_metadata(aliases).rename(columns={"ModelSEED ID": "modelseed_id"}),
         on="modelseed_id",
         how="left",
-        validate="many_to_one",
     )
 
+    lookup, ambiguous = build_lookup(compounds["modelseed_id"], aliases)
 
-def compound_lookup_id(
-    metabolite_id: str,
-) -> str:
-    """Remove compartment notation from a metabolite identifier."""
+    return metadata, lookup, ambiguous
 
-    identifier = re.sub(r"^M_", "", metabolite_id)
 
-    # gapseq / ModelSEED:
-    # cpd00029_c0 -> cpd00029
+def load_reactions(
+    modelseed_db: Path,
+) -> tuple[pd.DataFrame, pd.DataFrame, set[str]]:
+    """Load ModelSEED reaction metadata, aliases, and EC numbers."""
+    reactions = pd.read_csv(
+        required_modelseed_file(modelseed_db, REACTIONS_FILE),
+        sep="\t",
+        dtype=str,
+        keep_default_na=False,
+        usecols=["id", "name", "abbreviation", "definition"],
+    ).rename(
+        columns={
+            "id": "modelseed_id",
+            "name": "modelseed_name",
+            "abbreviation": "modelseed_abbreviation",
+        }
+    )
+
+    aliases = read_aliases(
+        required_modelseed_file(modelseed_db, REACTION_ALIASES_FILE)
+    )
+
+    ecs = read_aliases(
+        required_modelseed_file(modelseed_db, REACTION_ECS_FILE)
+    )
+
+    ec_numbers = (
+        ecs.groupby("ModelSEED ID")["External ID"]
+        .agg(join_unique)
+        .rename("ec_numbers")
+        .reset_index()
+        .rename(columns={"ModelSEED ID": "modelseed_id"})
+    )
+
+    metadata = (
+        reactions.merge(
+            alias_metadata(aliases).rename(
+                columns={"ModelSEED ID": "modelseed_id"}
+            ),
+            on="modelseed_id",
+            how="left",
+        )
+        .merge(
+            ec_numbers,
+            on="modelseed_id",
+            how="left",
+        )
+    )
+
+    lookup, ambiguous = build_lookup(reactions["modelseed_id"], aliases)
+
+    return metadata, lookup, ambiguous
+
+
+def compound_lookup_id(identifier: str) -> str:
+    """Remove model prefixes and compartment suffixes from metabolite IDs."""
+    identifier = re.sub(r"^M_", "", str(identifier))
+
     if identifier.startswith("cpd"):
         return identifier.split("_", 1)[0]
 
-    # BiGG:
-    # ac_e     -> ac
-    # glc__D_c -> glc__D
-    return re.sub(
-        r"_[a-z]\d*$",
-        "",
-        identifier,
-    )
+    return re.sub(r"_[a-z]\d*$", "", identifier)
 
-def metabolite_compartment(metabolite_id: str) -> str:
-    """Return a normalized compartment code from a metabolite ID."""
 
-    identifier = re.sub(r"^M_", "", metabolite_id)
-
+def compound_compartment(identifier: str) -> str:
+    """Return a normalized compartment suffix from a metabolite ID."""
+    identifier = re.sub(r"^M_", "", str(identifier))
     match = re.search(r"_([a-z])\d*$", identifier)
-
     return match.group(1) if match else ""
 
-def annotate_metabolites(
-    summary: pd.DataFrame,
-    compounds: pd.DataFrame,
+
+def reaction_lookup_id(identifier: str) -> str:
+    """Remove model prefixes and gapseq compartment suffixes from reaction IDs."""
+    identifier = re.sub(r"^R_", "", str(identifier))
+    match = re.match(r"^(rxn\d{5})(?:_[a-z]\d*)?$", identifier)
+    return match.group(1) if match else identifier
+
+
+def reaction_compartment(identifier: str) -> str:
+    """Return a normalized compartment suffix from a ModelSEED reaction ID."""
+    identifier = re.sub(r"^R_", "", str(identifier))
+    match = re.match(r"^rxn\d{5}_([a-z])\d*$", identifier)
+    return match.group(1) if match else ""
+
+
+def annotate(
+    frame: pd.DataFrame,
+    native_column: str,
+    metadata: pd.DataFrame,
+    lookup: pd.DataFrame,
+    ambiguous: set[str],
+    lookup_function,
+    compartment_function,
 ) -> pd.DataFrame:
-    """Annotate metabolites and create a common comparison identifier."""
-
-    annotated = summary.copy()
-
+    """Join ModelSEED metadata to a COBRA output table."""
+    annotated = frame.copy()
     annotated["lookup_id"] = (
-        annotated["metabolite"]
-        .astype(str)
-        .map(compound_lookup_id)
-    )
-
-    annotated["compartment"] = (
-        annotated["metabolite"]
-        .astype(str)
-        .map(metabolite_compartment)
+        annotated[native_column].astype(str).map(lookup_function)
     )
 
     annotated = annotated.merge(
-        compounds,
+        lookup,
         on="lookup_id",
         how="left",
         validate="many_to_one",
     )
 
+    annotated["mapping_source"] = annotated["mapping_source"].fillna("unmapped")
+    annotated.loc[
+        annotated["lookup_id"].isin(ambiguous),
+        "mapping_source",
+    ] = "ambiguous"
+
+    annotated = annotated.merge(
+        metadata,
+        on="modelseed_id",
+        how="left",
+        validate="many_to_one",
+    )
+
+    compartments = (
+        annotated[native_column]
+        .astype(str)
+        .map(compartment_function)
+    )
+
+    annotated["feature_id"] = annotated[native_column].astype(str)
     mapped = annotated["modelseed_id"].notna()
 
-    annotated["canonical_metabolite"] = annotated["metabolite"]
+    annotated.loc[mapped, "feature_id"] = (
+        annotated.loc[mapped, "modelseed_id"].astype(str)
+        + compartments[mapped].map(lambda value: f"_{value}" if value else "")
+    )
 
-    annotated.loc[mapped, "canonical_metabolite"] = (
-        annotated.loc[mapped, "modelseed_id"]
-        + annotated.loc[mapped, "compartment"].apply(
-            lambda compartment: (
-                f"_{compartment}"
-                if compartment
-                else ""
-            )
+    return annotated.drop(columns="lookup_id")
+
+
+def model_labels(frame: pd.DataFrame) -> pd.Series:
+    """Return labels identifying each COBRA model/run."""
+    if {"sample_id", "medium"}.issubset(frame.columns):
+        return (
+            frame["sample_id"].astype(str)
+            + " | "
+            + frame["medium"].astype(str)
         )
+
+    if "model_name" in frame.columns:
+        return frame["model_name"].astype(str)
+
+    raise ValueError(
+        "COBRA tables must contain sample_id + medium or model_name."
     )
 
-    annotated["mapping_source"] = (
-        annotated["mapping_source"]
-        .fillna("unmapped")
+
+def compound_display_labels(frame: pd.DataFrame) -> pd.Series:
+    """Create readable compound labels for the heatmap."""
+    labels = frame["metabolite"].astype(str).copy()
+    mapped = frame["modelseed_id"].notna() & frame["modelseed_name"].notna()
+
+    labels.loc[mapped] = (
+        frame.loc[mapped, "modelseed_name"].astype(str)
+        + " ["
+        + frame.loc[mapped, "feature_id"].astype(str)
+        + "]"
     )
 
-    annotation_columns = [
-        "canonical_metabolite",
-        "modelseed_id",
-        "metabolite_name",
-        "metabolite_abbreviation",
-        "formula",
-        "charge",
-        "compartment",
-        "mapping_source",
-    ]
+    return labels
 
-    for column in (
-        "modelseed_id",
-        "metabolite_name",
-        "metabolite_abbreviation",
-        "formula",
-        "charge",
-    ):
-        annotated[column] = annotated[column].fillna("")
 
-    annotated = annotated.drop(columns="lookup_id")
+def reaction_display_labels(frame: pd.DataFrame) -> pd.Series:
+    """Create readable reaction labels using ModelSEED names and EC numbers."""
+    labels = frame["reaction"].astype(str).copy()
+    mapped = frame["modelseed_id"].notna() & frame["modelseed_name"].notna()
 
-    columns = annotated.columns.tolist()
+    labels.loc[mapped] = frame.loc[mapped, "modelseed_name"].astype(str)
 
-    for column in annotation_columns:
-        columns.remove(column)
-
-    position = columns.index("metabolite") + 1
-
-    for column in reversed(annotation_columns):
-        columns.insert(position, column)
-
-    return annotated.loc[:, columns]
-
-def normalize_flux(
-    frame: pd.DataFrame,
-    threshold: float,
-) -> pd.DataFrame:
-    """Convert flux to numeric and set very small values to zero."""
-
-    result = frame.copy()
-
-    result["flux"] = pd.to_numeric(
-        result["flux"],
-        errors="coerce",
+    has_ec = mapped & frame["ec_numbers"].fillna("").astype(str).ne("")
+    labels.loc[has_ec] = (
+        frame.loc[has_ec, "modelseed_name"].astype(str)
+        + " [EC "
+        + frame.loc[has_ec, "ec_numbers"].astype(str)
+        + "]"
     )
 
-    result.loc[
-        result["flux"].abs() < threshold,
-        "flux",
-    ] = 0.0
+    no_ec = mapped & ~has_ec
+    labels.loc[no_ec] = (
+        frame.loc[no_ec, "modelseed_name"].astype(str)
+        + " ["
+        + frame.loc[no_ec, "feature_id"].astype(str)
+        + "]"
+    )
 
-    return result
-
-
-def filter_optimal(
-    frame: pd.DataFrame,
-    result_ids: set[str] | None,
-) -> pd.DataFrame:
-    """Restrict a result table to optimal model runs."""
-
-    if result_ids is None:
-        return frame
-
-    return frame[
-        frame["result_id"]
-        .astype(str)
-        .isin(result_ids)
-    ].copy()
+    return labels
 
 
 def make_matrix(
     frame: pd.DataFrame,
-    row_columns: list[str],
-    column: str,
-    separator: str,
-) -> pd.DataFrame:
-    """Convert a long-form flux table into a model-by-feature matrix."""
-
+    display_labels: pd.Series,
+) -> tuple[pd.DataFrame, list[str]]:
+    """Reshape raw flux values for plotting without aggregation."""
     working = frame.copy()
+    working["model_label"] = model_labels(working)
+    working["display_label"] = display_labels
+    working["flux"] = pd.to_numeric(working["flux"], errors="raise")
 
-    working["row_id"] = (
-        working[row_columns]
-        .fillna("")
-        .astype(str)
-        .agg(separator.join, axis=1)
+    duplicates = working.duplicated(
+        subset=["model_label", "feature_id"],
+        keep=False,
     )
 
-    matrix = working.pivot_table(
-        index="row_id",
-        columns=column,
+    if duplicates.any():
+        example = (
+            working.loc[
+                duplicates,
+                ["model_label", "feature_id"],
+            ]
+            .drop_duplicates()
+            .head(10)
+        )
+        raise ValueError(
+            "Multiple rows map to the same ModelSEED feature within a model. "
+            "Creating a heatmap would require aggregating fluxes, which this "
+            "script intentionally does not do. Examples:\n"
+            + example.to_string(index=False)
+        )
+
+    matrix = working.pivot(
+        index="model_label",
+        columns="feature_id",
         values="flux",
-        aggfunc="sum",
-        fill_value=0.0,
     )
 
-    matrix.index.name = separator.join(row_columns)
-
-    return matrix.sort_index()
-
-
-def select_heatmap_columns(
-    matrix: pd.DataFrame,
-    top_n: int,
-) -> pd.DataFrame:
-    """Keep active columns and optionally select the most variable."""
-
-    active = matrix.loc[
-        :,
-        (matrix != 0).any(axis=0),
-    ]
-
-    if (
-        active.empty
-        or top_n == 0
-        or active.shape[1] <= top_n
-    ):
-        return active
-
-    variance = (
-        active.var(axis=0)
-        .sort_values(ascending=False)
+    label_map = (
+        working[["feature_id", "display_label"]]
+        .drop_duplicates(subset="feature_id")
+        .set_index("feature_id")["display_label"]
+        .to_dict()
     )
 
-    return active.loc[
-        :,
-        variance.head(top_n).index,
+    display_order = [
+        label_map.get(feature_id, feature_id)
+        for feature_id in matrix.columns
     ]
+
+    return matrix, display_order
 
 
 def write_heatmap(
     matrix: pd.DataFrame,
+    labels: list[str],
     output_path: Path,
     title: str,
-    transform: str,
-    dpi: int,
 ) -> None:
-    """Write a flux heat map."""
+    """Draw a heatmap of raw flux values."""
+    values = matrix.to_numpy(dtype=float)
 
-    if matrix.empty:
-        raise ValueError(
-            f"Cannot draw {title}: no active flux columns."
-        )
-
-    if transform == "signed-log1p":
-        values = (
-            np.sign(matrix)
-            * np.log1p(np.abs(matrix))
-        )
-
-        plotted = pd.DataFrame(
-            values,
-            index=matrix.index,
-            columns=matrix.columns,
-        )
-
-    else:
-        plotted = matrix
-
-    figure_width = max(
-        8.0,
-        0.32 * plotted.shape[1] + 3.0,
-    )
-
-    figure_height = max(
-        4.0,
-        0.35 * plotted.shape[0] + 2.0,
-    )
-
-    figure, axis = plt.subplots(
-        figsize=(figure_width, figure_height)
-    )
-
-    maximum = float(
-        np.nanmax(
-            np.abs(plotted.to_numpy())
-        )
-    )
-
-    if not np.isfinite(maximum) or maximum == 0:
+    finite = np.abs(values[np.isfinite(values)])
+    maximum = float(finite.max()) if finite.size else 1.0
+    if maximum == 0:
         maximum = 1.0
 
+    width = min(40.0, max(10.0, 0.25 * matrix.shape[1] + 4.0))
+    height = min(30.0, max(4.0, 0.35 * matrix.shape[0] + 2.0))
+
+    figure, axis = plt.subplots(figsize=(width, height))
+
     image = axis.imshow(
-        plotted.to_numpy(),
+        values,
         aspect="auto",
         cmap="RdBu_r",
         vmin=-maximum,
         vmax=maximum,
     )
 
-    axis.set_xticks(
-        np.arange(plotted.shape[1])
-    )
+    axis.set_xticks(np.arange(matrix.shape[1]))
+    axis.set_xticklabels(labels, rotation=90, fontsize=7)
 
-    axis.set_xticklabels(
-        plotted.columns,
-        rotation=90,
-        fontsize=8,
-    )
+    axis.set_yticks(np.arange(matrix.shape[0]))
+    axis.set_yticklabels(matrix.index, fontsize=8)
 
-    axis.set_yticks(
-        np.arange(plotted.shape[0])
-    )
-
-    axis.set_yticklabels(
-        plotted.index,
-        fontsize=8,
-    )
-
-    axis.set_xlabel(
-        plotted.columns.name or "Feature"
-    )
-
-    axis.set_ylabel(
-        plotted.index.name or "Model"
-    )
-
+    axis.set_xlabel("")
+    axis.set_ylabel("Model")
     axis.set_title(title)
 
-    colorbar = figure.colorbar(
-        image,
-        ax=axis,
-    )
-
-    colorbar.set_label(
-        "sign(flux) × log1p(|flux|)"
-        if transform == "signed-log1p"
-        else "Flux"
-    )
+    colorbar = figure.colorbar(image, ax=axis)
+    colorbar.set_label("Flux")
 
     figure.tight_layout()
-
-    figure.savefig(
-        output_path,
-        dpi=dpi,
-        bbox_inches="tight",
-    )
-
+    figure.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(figure)
 
 
 def main() -> int:
-    """Run COBRA result aggregation."""
+    """Annotate COBRA outputs and draw compound and reaction heatmaps."""
+    args = build_parser().parse_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    parser = build_parser()
-    args = parser.parse_args()
-
-    if args.min_abs_flux < 0:
-        parser.error(
-            "--min-abs-flux cannot be negative."
-        )
-
-    if args.top_n < 0:
-        parser.error(
-            "--top-n cannot be negative."
-        )
-
-    if args.dpi <= 0:
-        parser.error(
-            "--dpi must be positive."
-        )
-
-    # Either supply both ModelSEED files or neither.
-    if bool(args.modelseed_compounds) != bool(
-        args.modelseed_compound_aliases
-    ):
-        parser.error(
-            "--modelseed-compounds and "
-            "--modelseed-compound-aliases "
-            "must be supplied together."
-        )
-
-    outputs = (
-        set(ALL_OUTPUTS)
-        if "all" in args.outputs
-        else set(args.outputs)
+    compound_metadata, compound_lookup, ambiguous_compounds = load_compounds(
+        args.modelseed_db
+    )
+    reaction_metadata, reaction_lookup, ambiguous_reactions = load_reactions(
+        args.modelseed_db
     )
 
-    args.output_dir.mkdir(
-        parents=True,
-        exist_ok=True,
+    compound_fluxes = read_tables(args.results, ".summary.tsv")
+    compound_fluxes = annotate(
+        compound_fluxes,
+        native_column="metabolite",
+        metadata=compound_metadata,
+        lookup=compound_lookup,
+        ambiguous=ambiguous_compounds,
+        lookup_function=compound_lookup_id,
+        compartment_function=compound_compartment,
     )
 
-    # ------------------------------------------------------------------
-    # Optional ModelSEED compound annotations
-    # ------------------------------------------------------------------
-
-    compounds = None
-
-    if args.modelseed_compounds:
-        compounds = read_modelseed_compounds(
-            args.modelseed_compounds,
-            args.modelseed_compound_aliases,
-        )
-
-    # ------------------------------------------------------------------
-    # Model metadata
-    # ------------------------------------------------------------------
-
-    metadata = read_results(
-        args.results,
-        ".model.tsv",
+    reaction_fluxes = read_tables(args.results, ".fluxes.tsv")
+    reaction_fluxes = annotate(
+        reaction_fluxes,
+        native_column="reaction",
+        metadata=reaction_metadata,
+        lookup=reaction_lookup,
+        ambiguous=ambiguous_reactions,
+        lookup_function=reaction_lookup_id,
+        compartment_function=reaction_compartment,
     )
 
-    optimal_result_ids = None
+    compound_fluxes.to_csv(
+        args.output_dir / "compound_fluxes.tsv",
+        sep="\t",
+        index=False,
+    )
 
-    if not args.include_nonoptimal:
-        optimal_result_ids = set(
-            metadata.loc[
-                metadata["status"] == "optimal",
-                "result_id",
-            ].astype(str)
-        )
+    reaction_fluxes.to_csv(
+        args.output_dir / "reaction_fluxes.tsv",
+        sep="\t",
+        index=False,
+    )
 
-    # ------------------------------------------------------------------
-    # Growth table
-    # ------------------------------------------------------------------
+    compound_matrix, compound_labels = make_matrix(
+        compound_fluxes,
+        compound_display_labels(compound_fluxes),
+    )
+    write_heatmap(
+        compound_matrix,
+        compound_labels,
+        args.output_dir / "compound_flux_heatmap.png",
+        "Compound fluxes",
+    )
 
-    if "growth-table" in outputs:
-        growth = metadata.copy()
-
-        sort_columns = [
-            column
-            for column in (
-                "status",
-                "maximum_biomass",
-            )
-            if column in growth.columns
-        ]
-
-        if sort_columns:
-            growth = growth.sort_values(
-                sort_columns,
-                ascending=[
-                    column == "status"
-                    for column in sort_columns
-                ],
-                na_position="last",
-            )
-
-        growth.to_csv(
-            args.output_dir / "growth_table.tsv",
-            sep="\t",
-            index=False,
-        )
-
-    # ------------------------------------------------------------------
-    # Boundary / metabolite summaries
-    # ------------------------------------------------------------------
-
-    summary_outputs = {
-        "summary-long",
-        "summary-matrix",
-        "summary-heatmap",
-    }
-
-    if outputs & summary_outputs:
-        summary = read_results(
-            args.results,
-            ".summary.tsv",
-        )
-
-        summary = normalize_flux(
-            summary,
-            args.min_abs_flux,
-        )
-
-        summary = filter_optimal(
-            summary,
-            optimal_result_ids,
-        )
-
-        summary = summary[
-            summary["boundary_type"].isin(
-                args.summary_boundary_types
-            )
-        ].copy()
-
-        if compounds is not None:
-            summary = annotate_metabolites(
-                summary,
-                compounds,
-            )
-
-        if "summary-long" in outputs:
-            summary.to_csv(
-                args.output_dir
-                / "summary_long.tsv",
-                sep="\t",
-                index=False,
-            )
-
-        if outputs & {
-            "summary-matrix",
-            "summary-heatmap",
-        }:
-            summary_matrix = make_matrix(
-                summary,
-                row_columns=args.row_columns,
-                column=args.summary_column,
-                separator=args.row_separator,
-            )
-
-            if "summary-matrix" in outputs:
-                summary_matrix.to_csv(
-                    args.output_dir
-                    / "summary_flux_matrix.tsv",
-                    sep="\t",
-                )
-
-            if "summary-heatmap" in outputs:
-                plotted = select_heatmap_columns(
-                    summary_matrix,
-                    args.top_n,
-                )
-
-                write_heatmap(
-                    plotted,
-                    args.output_dir
-                    / (
-                        "summary_flux_heatmap."
-                        f"{args.figure_format}"
-                    ),
-                    title=(
-                        "Boundary-metabolite fluxes\n"
-                        "positive = uptake; "
-                        "negative = secretion"
-                    ),
-                    transform=args.heatmap_transform,
-                    dpi=args.dpi,
-                )
-
-    # ------------------------------------------------------------------
-    # Reaction fluxes
-    # ------------------------------------------------------------------
-
-    reaction_outputs = {
-        "reaction-long",
-        "reaction-matrix",
-        "reaction-heatmap",
-    }
-
-    if outputs & reaction_outputs:
-        fluxes = read_results(
-            args.results,
-            ".fluxes.tsv",
-        )
-
-        fluxes = normalize_flux(
-            fluxes,
-            args.min_abs_flux,
-        )
-
-        fluxes = filter_optimal(
-            fluxes,
-            optimal_result_ids,
-        )
-
-        if "reaction-long" in outputs:
-            fluxes.to_csv(
-                args.output_dir
-                / "reaction_flux_long.tsv",
-                sep="\t",
-                index=False,
-            )
-
-        if outputs & {
-            "reaction-matrix",
-            "reaction-heatmap",
-        }:
-            reaction_matrix = make_matrix(
-                fluxes,
-                row_columns=args.row_columns,
-                column="reaction",
-                separator=args.row_separator,
-            )
-
-            if "reaction-matrix" in outputs:
-                reaction_matrix.to_csv(
-                    args.output_dir
-                    / "reaction_flux_matrix.tsv",
-                    sep="\t",
-                )
-
-            if "reaction-heatmap" in outputs:
-                plotted = select_heatmap_columns(
-                    reaction_matrix,
-                    args.top_n,
-                )
-
-                write_heatmap(
-                    plotted,
-                    args.output_dir
-                    / (
-                        "reaction_flux_heatmap."
-                        f"{args.figure_format}"
-                    ),
-                    title="Reaction fluxes",
-                    transform=args.heatmap_transform,
-                    dpi=args.dpi,
-                )
-
-    # ------------------------------------------------------------------
-    # Report generated files
-    # ------------------------------------------------------------------
-
-    print("Created outputs:")
-
-    for path in sorted(
-        args.output_dir.iterdir()
-    ):
-        if path.is_file():
-            print(path)
+    reaction_matrix, reaction_labels = make_matrix(
+        reaction_fluxes,
+        reaction_display_labels(reaction_fluxes),
+    )
+    write_heatmap(
+        reaction_matrix,
+        reaction_labels,
+        args.output_dir / "reaction_flux_heatmap.png",
+        "Reaction fluxes",
+    )
 
     return 0
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-
-    except KeyboardInterrupt:
-        print(
-            "Interrupted.",
-            file=sys.stderr,
-        )
-
-        raise SystemExit(130)
+    raise SystemExit(main())

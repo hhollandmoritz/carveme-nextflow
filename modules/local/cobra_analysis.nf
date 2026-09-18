@@ -94,87 +94,39 @@ process RUN_COBRA_MODEL {
 
 
 process SUMMARIZE_COBRA_MODELS {
+
     tag 'all_models'
     label 'process_cobra_summary'
 
     input:
-    path model_tables
     path summary_tables
     path flux_tables
-    path modelseed_compounds
-    path modelseed_compound_aliases
-    val options
+    path modelseed_db
 
     output:
     path 'comparison', emit: comparison
 
     script:
-    def requested_outputs = options.outputs ?: [
-        'growth-table',
-        'summary-long',
-        'summary-matrix',
-        'summary-heatmap'
-    ]
-    def row_columns = options.row_columns ?: ['sample_id', 'medium']
-    def boundary_types = options.summary_boundary_types ?: ['exchange']
-
-    def args = []
-    args << '--outputs ' + requested_outputs.collect { "'${it}'" }.join(' ')
-    args << '--row-columns ' + row_columns.collect { "'${it}'" }.join(' ')
-    args << "--row-separator '${options.row_separator ?: ' | '}'"
-    args << "--summary-column '${options.summary_column ?: 'metabolite'}'"
-    args << '--summary-boundary-types ' + boundary_types.collect { "'${it}'" }.join(' ')
-    args << "--min-abs-flux '${options.min_abs_flux == null ? 1e-9 : options.min_abs_flux}'"
-    args << "--top-n '${options.top_n == null ? 50 : options.top_n}'"
-    args << "--heatmap-transform '${options.heatmap_transform ?: 'signed-log1p'}'"
-    args << "--figure-format '${options.figure_format ?: 'png'}'"
-    args << "--dpi '${options.dpi ?: 300}'"
-
-    if (options.include_nonoptimal) {
-        args << '--include-nonoptimal'
-    }
-
-    /*
-     * This option is added only when a modelseed file is supplied. It therefore
-     * remains compatible with the non-modelseed summarizer when the parameter is null.
-     */
-    if (modelseed_compounds && modelseed_compound_aliases) {
-        args << "--modelseed-compounds '${modelseed_compounds}'"
-        args << "--modelseed-compound-aliases '${modelseed_compound_aliases}'"
-    }
-    if (options.extra_args) {
-        args << options.extra_args.toString()
-    }
-
-    def argument_string = args.join(' \\\n        ')
-
     """
-    export HOME="\$PWD/.home"
-    export XDG_CACHE_HOME="\$PWD/.cache"
-
-    mkdir -p "\$HOME" "\$XDG_CACHE_HOME"
-
     mkdir -p comparison
 
     summarize_cobra_models.py \
         --results . \
         --output-dir comparison \
-        ${argument_string}
+        --modelseed-db '${modelseed_db}'
     """
 
     stub:
     """
     mkdir -p comparison
 
-    printf 'model_name\tresult_id\tstatus\tmaximum_biomass\nstub\tstub\toptimal\t1.0\n' \\
-        > comparison/growth_table.tsv
-    printf 'model_name\tresult_id\tmetabolite\tflux\n' \\
-        > comparison/summary_long.tsv
-    printf 'model_name\tstub_e\nstub\t1.0\n' \\
-        > comparison/summary_flux_matrix.tsv
-    printf 'model_name\tBIOMASS\nstub\t1.0\n' \\
-        > comparison/reaction_flux_matrix.tsv
-    : > comparison/summary_flux_heatmap.png
+    printf 'model_name\\tmetabolite\\tflux\\n' \
+        > comparison/compound_fluxes.tsv
+
+    printf 'model_name\\treaction\\tflux\\n' \
+        > comparison/reaction_fluxes.tsv
+
+    : > comparison/compound_flux_heatmap.png
     : > comparison/reaction_flux_heatmap.png
     """
 }
